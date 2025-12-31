@@ -1,0 +1,9 @@
+"""Auto-generated UDTF package for {{ data_model.space }}.{{ data_model.external_id }}"""
+
+from cognite.pygen_spark.udtf import {{ view.external_id|title }}UDTF
+
+__all__ = [
+    {% for view in views %}
+    "{{ view.external_id|title }}UDTF",{% endfor %}
+]
+

@@ -1,0 +1,10 @@
+CREATE OR REPLACE VIEW {{ catalog }}.{{ schema }}.{{ view.external_id }} AS
+SELECT * FROM {{ catalog }}.{{ schema }}.{{ udtf_name }}(
+    client_id     => SECRET('{{ secret_scope }}', 'client_id'),
+    client_secret => SECRET('{{ secret_scope }}', 'client_secret'),
+    tenant_id     => SECRET('{{ secret_scope }}', 'tenant_id'),
+    cdf_cluster   => SECRET('{{ secret_scope }}', 'cdf_cluster'),
+    project       => SECRET('{{ secret_scope }}', 'project')
+    -- All view property parameters use default NULL values
+)
+
