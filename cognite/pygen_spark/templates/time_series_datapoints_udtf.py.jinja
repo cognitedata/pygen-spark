@@ -1,0 +1,338 @@
+"""Auto-generated Time Series Datapoints UDTF for Cognite Data Fusion.
+
+This UDTF retrieves datapoints from a single Time Series using instance_id.
+Similar to client.time_series.data.retrieve() for a single time series.
+Returns rows in format: (timestamp, value)
+Note: All datapoints come from the same time series, so space/external_id not needed per row.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Iterator
+from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+from pyspark.sql.types import (
+    StructType,
+    StructField,
+    TimestampType,
+    StringType,
+    DoubleType,
+    IntegerType,
+)
+
+if TYPE_CHECKING:
+    from cognite.client import CogniteClient
+
+# Wrap critical imports in try-except to handle missing dependencies
+try:
+    from cognite.client import CogniteClient
+    from cognite.client.data_classes.data_modeling.ids import NodeId
+    COGNITE_AVAILABLE = True
+    IMPORT_ERROR = None
+except ImportError as import_error:
+    COGNITE_AVAILABLE = False
+    IMPORT_ERROR = str(import_error)
+    # Create dummy classes to prevent syntax errors if imports fail
+    class CogniteClient:
+        pass
+    class NodeId:
+        def __init__(self, space: str, external_id: str):
+            self.space = space
+            self.external_id = external_id
+
+
+class TimeSeriesDatapointsUDTF:
+    """UDTF for retrieving datapoints from a single Time Series using instance_id.
+    
+    Similar to client.time_series.data.retrieve() for a single time series.
+    Returns rows in format: (timestamp, value)
+    Note: All datapoints come from the same time series, so space/external_id not needed per row.
+    """
+    
+    @staticmethod
+    def outputSchema() -> StructType:
+        """Return the output schema: (timestamp, value)."""
+        return StructType([
+            StructField("timestamp", TimestampType(), nullable=True),
+            StructField("value", DoubleType(), nullable=True),
+        ])
+    
+    @staticmethod
+    def analyze(
+        space: str | None = None,
+        external_id: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        aggregates: str | None = None,
+        granularity: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        tenant_id: str | None = None,
+        cdf_cluster: str | None = None,
+        project: str | None = None,
+    ):
+        """Analyze method required by PySpark Connect for session-scoped UDTFs.
+        
+        This method is used by PySpark Connect to validate arguments and determine output schema.
+        For Unity Catalog registration, this method is optional but harmless if present.
+        
+        Args:
+            space: CDF space name (required)
+            external_id: CDF external_id (required)
+            start: Start timestamp (ISO 8601 or "2w-ago", "1d-ago", etc.)
+            end: End timestamp (ISO 8601 or "now", "1d-ahead", etc.)
+            aggregates: Optional aggregate type (e.g., "average", "max", "min", "count")
+            granularity: Optional granularity for aggregates (e.g., "1h", "1d", "30s")
+            client_id: OAuth2 client ID (required)
+            client_secret: OAuth2 client secret (required)
+            tenant_id: Azure AD tenant ID (required)
+            cdf_cluster: CDF cluster URL (required)
+            project: CDF project name (required)
+        
+        Returns:
+            AnalyzeResult containing the output schema
+        """
+        from pyspark.sql.udtf import AnalyzeResult
+        return AnalyzeResult(TimeSeriesDatapointsUDTF.outputSchema())
+    
+    def __init__(self) -> None:
+        """Initialize UDTF (no parameters allowed when using analyze method).
+        
+        Client initialization happens in eval() for all registration modes.
+        """
+        # Initialize instance variables
+        self.client = None
+        self._client_initialized = False
+        self._init_error = None
+        self._init_error_category = None
+        self._init_success = True
+    
+    def _create_client(
+        self,
+        client_id: str,
+        client_secret: str,
+        tenant_id: str,
+        cdf_cluster: str,
+        project: str,
+        **kwargs: dict[str, object],
+    ) -> CogniteClient:
+        """Create CogniteClient with OAuth2 credentials.
+        
+        Note: Secrets are expected to be stored as plain text in Databricks Secret Manager.
+        Databricks encrypts secrets at rest, so no additional encoding is needed.
+        """
+        import sys
+        
+        # Dependencies should already be checked in __init__, but double-check here
+        if not COGNITE_AVAILABLE:
+            raise ImportError(f"Missing dependencies: {IMPORT_ERROR}")
+        
+        # These imports should work if COGNITE_AVAILABLE is True, but import locally for clarity
+        from cognite.client import CogniteClient
+        
+        try:
+            # Use SDK's default_oauth_client_credentials method (aligned with pygen-main's load_cognite_client_from_toml)
+            # This ensures consistent URL construction: https://{cdf_cluster}.cognitedata.com
+            client = CogniteClient.default_oauth_client_credentials(
+                project=project,
+                cdf_cluster=cdf_cluster,
+                tenant_id=tenant_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                client_name="pygen-spark",
+            )
+            
+            # Verify authentication by attempting to get a token
+            # This will raise an exception if authentication fails
+            try:
+                _ = client.config.credentials.authorization_header()
+                sys.stderr.write(f"[UDTF] ✓ Authentication successful for project: {project}\n")
+            except Exception as auth_error:
+                sys.stderr.write(f"[UDTF] ✗ Authentication failed: {type(auth_error).__name__}: {str(auth_error)}\n")
+                raise
+            
+            return client
+        except Exception as e:
+            sys.stderr.write(f"[UDTF] ✗ Failed to create CogniteClient: {type(e).__name__}: {str(e)}\n")
+            import traceback
+            sys.stderr.write(f"{traceback.format_exc()}\n")
+            raise
+    
+    def _classify_error(self, error: Exception) -> str:
+        """Classify the type of initialization error.
+        
+        Args:
+            error: The exception that occurred during initialization
+        
+        Returns:
+            Error category string: 'AUTHENTICATION', 'CONFIGURATION', 'NETWORK', or 'UNKNOWN'
+        """
+        error_type = type(error).__name__
+        error_msg = str(error).lower()
+        
+        # Authentication-related errors
+        auth_keywords = [
+            'authentication', 'auth', 'unauthorized', 'forbidden', '401', '403',
+            'invalid_client', 'invalid_grant', 'invalid_credentials', 'token',
+            'oauth', 'client_id', 'client_secret', 'tenant_id', 'credential'
+        ]
+        if any(keyword in error_msg for keyword in auth_keywords):
+            return 'AUTHENTICATION'
+        
+        # Configuration-related errors
+        config_keywords = [
+            'config', 'configuration', 'missing', 'required', 'invalid',
+            'valueerror', 'typeerror', 'attributeerror', 'keyerror'
+        ]
+        if any(keyword in error_msg for keyword in config_keywords) or error_type in ['ValueError', 'TypeError', 'AttributeError', 'KeyError']:
+            return 'CONFIGURATION'
+        
+        # Network-related errors
+        network_keywords = [
+            'connection', 'timeout', 'network', 'dns', 'resolve', 'unreachable',
+            'connectionerror', 'timeouterror', 'httperror', 'urlerror'
+        ]
+        if any(keyword in error_msg for keyword in network_keywords) or error_type in ['ConnectionError', 'TimeoutError', 'HTTPError', 'URLError']:
+            return 'NETWORK'
+        
+        # Default to unknown
+        return 'UNKNOWN'
+    
+    def eval(
+        self,
+        space: str | None = None,
+        external_id: str | None = None,
+        start: str | None = None,
+        end: str | None = None,
+        aggregates: str | None = None,
+        granularity: str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        tenant_id: str | None = None,
+        cdf_cluster: str | None = None,
+        project: str | None = None,
+    ) -> Iterator[tuple[object, ...]]:
+        """Execute UDTF using instance_id (space + external_id) for query.
+        
+        Args:
+            space: CDF space name (required)
+            external_id: CDF external_id (required)
+            start: Start timestamp (ISO 8601 or "2w-ago", "1d-ago", etc.)
+            end: End timestamp (ISO 8601 or "now", "1d-ahead", etc.)
+            aggregates: Optional aggregate type (e.g., "average", "max", "min", "count")
+            granularity: Optional granularity for aggregates (e.g., "1h", "1d", "30s")
+            client_id: OAuth2 client ID (required)
+            client_secret: OAuth2 client secret (required)
+            tenant_id: Azure AD tenant ID (required)
+            cdf_cluster: CDF cluster URL (required)
+            project: CDF project name (required)
+        
+        Yields:
+            (timestamp, value) tuples - all from the same time series instance
+        """
+        import sys
+        import traceback
+        
+        try:
+            # Initialize client if not already initialized (session-scoped mode)
+            if not self._client_initialized:
+                if client_id is None or client_secret is None:
+                    error_msg = "Missing credentials: client_id and client_secret are required for session-scoped UDTFs"
+                    error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ Initialization failed [{error_category}]: {error_msg}\n")
+                    yield (None, None)
+                    return
+                
+                # Check if dependencies are available
+                if not COGNITE_AVAILABLE:
+                    error_msg = f"Missing dependencies: {IMPORT_ERROR}. Install cognite-sdk or use DBR 18.1+ with ENVIRONMENT clause."
+                    error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ Initialization failed [{error_category}]: {error_msg}\n")
+                    yield (None, None)
+                    return
+                
+                try:
+                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)
+                    self._client_initialized = True
+                    self._init_error = None
+                    self._init_error_category = None
+                except Exception as e:
+                    try:
+                        self._init_error_category = self._classify_error(e)
+                    except Exception:
+                        self._init_error_category = 'UNKNOWN'
+                    self._init_error = f"{type(e).__name__}: {str(e)}"
+                    self._client_initialized = True
+                    self._init_success = False  # Mark as failed
+                    yield (None, None)
+                    return
+            
+            # Check if initialization succeeded
+            if not hasattr(self, '_init_success') or not self._init_success or self._init_error is not None:
+                error_msg = getattr(self, '_init_error', 'Unknown initialization error')
+                error_category = getattr(self, '_init_error_category', 'UNKNOWN')
+                sys.stderr.write(f"[UDTF] ✗ Initialization failed [{error_category}]: {error_msg}\n")
+                yield (None, None)
+                return
+            
+            # Validate inputs
+            if not space or not external_id:
+                sys.stderr.write("ERROR: Both space and external_id are required\n")
+                yield (None, None)
+                return
+            
+            if not start:
+                start = "2w-ago"  # Default to last 2 weeks
+            if not end:
+                end = "now"
+            
+            try:
+                # Use instance_id (NodeId) for query
+                datapoints = self.client.time_series.data.retrieve(
+                    instance_id=NodeId(space, external_id),
+                    start=start,
+                    end=end,
+                    aggregates=[aggregates] if aggregates else None,
+                    granularity=granularity,
+                )
+                
+                # Yield datapoints (no space/external_id needed - all from same instance)
+                if aggregates:
+                    # For aggregates, access by aggregate name (e.g., .average, .max)
+                    aggregate_name = aggregates.lower()
+                    if hasattr(datapoints, aggregate_name):
+                        values = getattr(datapoints, aggregate_name)
+                        timestamps = datapoints.timestamp
+                        for ts_ms, val in zip(timestamps, values):
+                            # Convert milliseconds timestamp to datetime for PySpark TimestampType
+                            timestamp_dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc) if ts_ms is not None else None
+                            yield (timestamp_dt, val)
+                    else:
+                        sys.stderr.write(f"ERROR: Aggregate '{aggregates}' not found in response\n")
+                        yield (None, None)
+                else:
+                    # For raw datapoints, use .value
+                    for dp in datapoints:
+                        # Convert milliseconds timestamp to datetime for PySpark TimestampType
+                        timestamp_dt = datetime.fromtimestamp(dp.timestamp / 1000.0, tz=timezone.utc) if dp.timestamp is not None else None
+                        yield (timestamp_dt, dp.value)
+                    
+                    # If no rows were found, yield at least one row with None values
+                    # This prevents "end-of-input" error when the time series is empty
+                    if len(datapoints) == 0:
+                        sys.stderr.write("[UDTF] ⚠ No datapoints found, yielding empty row to prevent 'end-of-input' error\n")
+                        yield (None, None)
+                        
+            except Exception as e:
+                # Log error for debugging
+                error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
+                sys.stderr.write(error_info)
+                # Yield a row with error information
+                yield (None, None)
+        except Exception as outer_error:
+            # Last resort: if anything goes wrong, yield an error row
+            error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
+            sys.stderr.write(f"{error_info}\n{traceback.format_exc()}\n")
+            yield (None, None)
+

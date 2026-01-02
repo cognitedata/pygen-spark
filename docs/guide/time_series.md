@@ -2,13 +2,14 @@
 
 ## Overview
 
-Time series UDTFs allow you to query CDF time series data directly from Spark SQL. These UDTFs are pre-built and available in the `cognite-databricks` package.
+Time series UDTFs allow you to query CDF time series data directly from Spark SQL. These UDTFs are **template-generated** using the same Jinja2 template-based generation approach as Data Model UDTFs, ensuring consistent behavior, error handling, and initialization patterns. They are available in the `pygen-spark` package, making them available for any Spark cluster (not limited to Databricks).
 
-**Note**: Time series UDTFs are part of the `cognite-databricks` package, which is designed for Databricks environments. However, the UDTF code itself is generic PySpark code and may work in basic Spark clusters if:
-
-1. The `cognite-databricks` package is installed
-2. All dependencies are available on Spark worker nodes
-3. The Spark version supports the required UDTF features
+Time series UDTFs work with any Spark cluster that supports PySpark UDTFs, including:
+- Standalone Spark clusters
+- YARN clusters
+- Kubernetes clusters
+- Local development environments
+- Databricks (via `cognite-databricks` which imports from `pygen-spark`)
 
 ## Available Time Series UDTFs
 
@@ -20,21 +21,60 @@ The following time series UDTFs are available:
 
 ## Installation
 
-To use time series UDTFs in a basic Spark cluster:
+To use time series UDTFs in a Spark cluster:
 
 ```bash
-pip install cognite-databricks
+pip install cognite-pygen-spark
 ```
 
 **Important**: Ensure `cognite-sdk` is also installed on all Spark worker nodes.
 
 ## Registration
 
-Register time series UDTFs in your Spark session:
+### Option 1: Generate and Use Template-Generated UDTFs (Recommended)
+
+Time series UDTFs are generated using the same template-based generation as Data Model UDTFs. Generate them using `SparkUDTFGenerator`:
+
+```python
+from pathlib import Path
+from cognite.client.data_classes.data_modeling.ids import DataModelId
+from cognite.pygen import load_cognite_client_from_toml
+from cognite.pygen_spark import SparkUDTFGenerator
+
+# Load client from TOML file
+client = load_cognite_client_from_toml("config.toml")
+
+# Create generator
+generator = SparkUDTFGenerator(
+    client=client,
+    output_dir=Path("./generated_udtfs"),
+    data_model=DataModelId(space="sailboat", external_id="sailboat", version="1"),
+    top_level_package="cognite_udtfs",
+)
+
+# Generate time series UDTFs (template-generated, same as data model UDTFs)
+result = generator.generate_time_series_udtfs()
+print(f"Generated {result.total_count} time series UDTF(s)")
+for udtf_name, file_path in result.generated_files.items():
+    print(f"  - {udtf_name}: {file_path}")
+
+# Register the generated UDTFs
+from pyspark.sql.functions import udtf
+from cognite.databricks import register_udtf_from_file
+
+for udtf_name, file_path in result.generated_files.items():
+    register_udtf_from_file(file_path, function_name=udtf_name)
+```
+
+**Note**: Time series UDTFs use the same Jinja2 template-based generation as Data Model UDTFs, ensuring consistent behavior, error handling (`_classify_error()`), and initialization patterns (`_create_client()`, `_init_success`).
+
+### Option 2: Use Generated Classes Directly
+
+If you've already generated the UDTF files, you can import and register them directly:
 
 ```python
 from pyspark.sql.functions import udtf
-from cognite.databricks.time_series_udtfs import (
+from cognite.pygen_spark.time_series_udtfs import (
     TimeSeriesDatapointsUDTF,
     TimeSeriesDatapointsLongUDTF,
     TimeSeriesLatestDatapointsUDTF,
@@ -51,6 +91,8 @@ spark.udtf.register("time_series_latest_datapoints_udtf", time_series_latest_dat
 
 print("✓ Time Series UDTFs registered")
 ```
+
+**Note**: These classes are generated from templates and are included in the `pygen-spark` package for convenience. For customization, use Option 1 to generate your own versions.
 
 ## Querying Single Time Series
 
@@ -159,15 +201,38 @@ ORDER BY v.external_id, ts.timestamp
 LIMIT 100;
 ```
 
-## Compatibility Notes
+## Using with Configuration Files
 
-- **Basic Spark Clusters**: Time series UDTFs may work in basic Spark clusters if all dependencies are installed, but they are primarily designed for Databricks environments.
+Time series UDTFs work with TOML/YAML configuration files for credentials:
 
-- **Alternative**: If time series UDTFs from `cognite-databricks` don't work in your Spark cluster, you can create similar UDTFs using the same patterns as the generated Data Model UDTFs.
+```python
+import tomli
+
+# Load credentials from config.toml
+with open("config.toml", "rb") as f:
+    config = tomli.load(f)
+
+cognite_config = config["cognite"]
+
+# Use in SQL query
+query = f"""
+SELECT * FROM time_series_datapoints_udtf(
+    space => 'sailboat',
+    external_id => 'vessel.speed',
+    start => '1d-ago',
+    end => 'now',
+    client_id => '{cognite_config["client_id"]}',
+    client_secret => '{cognite_config["client_secret"]}',
+    tenant_id => '{cognite_config["tenant_id"]}',
+    cdf_cluster => '{cognite_config["cdf_cluster"]}',
+    project => '{cognite_config["project"]}'
+) ORDER BY timestamp LIMIT 10;
+"""
+```
 
 ## Next Steps
 
 - Learn about [Joining](./joining.md) UDTFs together
 - See [Querying](./querying.md) for more query examples
-- For Databricks-specific features, see [cognite-databricks documentation](https://github.com/cognitedata/cognite-databricks)
+- For Databricks-specific features (Unity Catalog, Secret Manager), see [cognite-databricks documentation](https://github.com/cognitedata/cognite-databricks)
 

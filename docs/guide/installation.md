@@ -88,3 +88,4 @@ assert pyspark.__version__ >= "3.5.0", "PySpark 3.5+ required for UDTF support"
 
 Once installation is complete, proceed to [Generation](./generation.md) to generate UDTF code from your CDF Data Model.
 
+

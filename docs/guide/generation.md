@@ -106,3 +106,4 @@ class SmallBoatUDTF:
 
 After generation, proceed to [Registration](./registration.md) to register the UDTFs in your Spark session.
 
+
