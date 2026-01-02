@@ -203,3 +203,4 @@ LIMIT 100;
 - Learn about [Filtering](./filtering.md) data with WHERE clauses
 - Explore [Joining](./joining.md) UDTFs together
 
+

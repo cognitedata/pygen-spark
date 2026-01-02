@@ -14,10 +14,44 @@ A code generation library that extends [pygen](https://github.com/cognitedata/py
 ## Features
 
 - **UDTF Generation**: Automatically generates Python UDTF functions for each View in a CDF Data Model
+- **Time Series UDTFs**: Template-generated UDTFs for querying CDF time series datapoints (single, multiple, latest) using the same template-based generation as Data Model UDTFs
 - **Type Safety**: Leverages pygen's internal representation for strongly-typed code generation
 - **Predicate Pushdown**: Generated UDTFs support filter translation from Spark SQL to CDF API filters
 - **Configuration File Support**: Uses TOML/YAML configuration files for secure credential management
 - **Generic Spark Support**: Works with any Spark cluster, not limited to Databricks
+- **Type Conversion Utilities**: `TypeConverter` class for converting between CDF types, PySpark DataTypes, and SQL DDL
+- **Connection Configuration**: `CDFConnectionConfig` Pydantic model for managing CDF credentials
+- **Utility Functions**: Helper functions for consistent UDTF naming and other utilities
+
+### Using Generic Spark Utilities
+
+`pygen-spark` provides generic utilities that work with any Spark cluster:
+
+```python
+from cognite.pygen_spark import TypeConverter, CDFConnectionConfig, to_udtf_function_name
+
+# Type conversion utilities
+from cognite.client import data_modeling as dm
+from pyspark.sql.types import StringType
+
+# Convert CDF property type to PySpark DataType
+spark_type = TypeConverter.cdf_to_spark(dm.Text(), is_array=False)
+# Returns: StringType()
+
+# Convert PySpark DataType to SQL DDL
+sql_ddl = TypeConverter.spark_to_sql_ddl(spark_type)
+# Returns: "STRING"
+
+# Connection configuration from TOML
+config = CDFConnectionConfig.from_toml("config.toml")
+client = config.create_client()
+
+# Convert view external_id to UDTF function name
+udtf_name = to_udtf_function_name("MyView")
+# Returns: "my_view_udtf"
+```
+
+These utilities are generic and work with any Spark cluster, not just Databricks.
 
 ## Installation
 
@@ -50,6 +84,12 @@ result = generator.generate_udtfs()
 print(f"Generated {result.total_count} UDTF(s)")
 for view_id, file_path in result.generated_files.items():
     print(f"  - {view_id}: {file_path}")
+
+# Generate time series UDTFs (template-generated, same as data model UDTFs)
+ts_result = generator.generate_time_series_udtfs()
+print(f"Generated {ts_result.total_count} time series UDTF(s)")
+for udtf_name, file_path in ts_result.generated_files.items():
+    print(f"  - {udtf_name}: {file_path}")
 ```
 
 See the [User Guide](docs/guide/index.md) for complete documentation on generating, registering, and querying UDTFs.
@@ -61,6 +101,7 @@ See the [User Guide](docs/guide/index.md) for complete documentation on generati
 - **Reuses pygen's View parsing**: Leverages pygen's internal representation of CDF Data Models
 - **Custom template engine**: Uses Jinja2 templates to generate UDTF Python code and SQL Views
 - **Extends MultiAPIGenerator**: Builds on pygen's code generation infrastructure
+- **Consistent template-based generation**: Both Data Model UDTFs and Time Series UDTFs use the same Jinja2 template-based generation approach for consistent behavior, error handling, and initialization patterns
 
 See the [Technical Plan](../Technical%20Plan%20-%20CDF%20Databricks%20Integration%20(UDTF-Based).md) for detailed architecture documentation.
 

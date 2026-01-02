@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 from cognite.client import CogniteClient, data_modeling as dm
 from cognite.client.data_classes.data_modeling import DataModelIdentifier
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 # Long-term: Once pygen is updated to export all dependencies in __init__.py, we can use:
 #   from cognite.pygen import SDKGenerator, MultiAPIGenerator, DataModel
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
-DataModel = Union[DataModelIdentifier, dm.DataModel[dm.View]]
+DataModel = DataModelIdentifier | dm.DataModel[dm.View]
 
 
 class SparkUDTFGenerator(SDKGenerator):
@@ -208,4 +208,67 @@ class SparkUDTFGenerator(SDKGenerator):
         file_path.write_text(udtf_code, encoding="utf-8")
 
         return file_path
+
+    def generate_time_series_udtfs(
+        self,
+        output_dir: Path | None = None,
+    ) -> UDTFGenerationResult:
+        """Generate time series UDTF files using templates.
+        
+        Generates the three standard time series UDTFs:
+        - time_series_datapoints_udtf
+        - time_series_datapoints_long_udtf
+        - time_series_latest_datapoints_udtf
+        
+        Uses the same template-based generation pattern as data model UDTFs for consistency.
+        
+        Args:
+            output_dir: Optional output directory. If None, uses self.output_dir.
+        
+        Returns:
+            UDTFGenerationResult with generated files
+        """
+        if output_dir is None:
+            output_dir = self.output_dir
+        
+        output_dir = Path(output_dir)
+        udtf_dir = output_dir / self.top_level_package
+        udtf_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Map of template name to output filename
+        time_series_udtfs = {
+            "time_series_datapoints_udtf": "time_series_datapoints_udtf.py.jinja",
+            "time_series_datapoints_long_udtf": "time_series_datapoints_long_udtf.py.jinja",
+            "time_series_latest_datapoints_udtf": "time_series_latest_datapoints_udtf.py.jinja",
+        }
+        
+        generated_files: dict[str, Path] = {}
+        
+        # Use the same template environment as data model UDTFs
+        for file_name, template_name in time_series_udtfs.items():
+            # Load template using the same environment as data model UDTFs
+            template = self.udtf_generator.env.get_template(template_name)
+            
+            # Render template (no variables needed for time series UDTFs)
+            udtf_code = template.render()
+            
+            # Format with Black if available (same as data model UDTFs)
+            try:
+                import black
+                udtf_code = black.format_str(udtf_code, mode=black.Mode(line_length=120))
+            except ImportError:
+                pass
+            except Exception:
+                pass
+            
+            # Write to file using the same pattern as data model UDTFs
+            file_path = udtf_dir / f"{file_name}.py"
+            file_path.write_text(udtf_code, encoding="utf-8")
+            generated_files[file_name] = file_path
+        
+        return UDTFGenerationResult(
+            generated_files=generated_files,
+            output_dir=output_dir,
+            total_count=len(generated_files),
+        )
 

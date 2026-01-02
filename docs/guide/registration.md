@@ -136,3 +136,4 @@ register_udtf_from_file(udtf_file, "smallboat_udtf")
 
 After registration, you can start [Querying](./querying.md) your UDTFs.
 
+

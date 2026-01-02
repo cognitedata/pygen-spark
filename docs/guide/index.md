@@ -21,8 +21,18 @@ This documentation covers the complete workflow for using pygen-spark:
 4. **[Querying](./querying.md)**: Query UDTFs using SQL with credential parameters
 5. **[Filtering](./filtering.md)**: Filter data using WHERE clauses with predicate pushdown
 6. **[Joining](./joining.md)**: Join data from different UDTFs based on `external_id` and `space`
-7. **[Time Series](./time_series.md)**: Work with time series UDTFs (if available)
+7. **[Time Series](./time_series.md)**: Work with template-generated time series UDTFs (same template-based generation as Data Model UDTFs)
 8. **[Troubleshooting](./troubleshooting.md)**: Common issues and solutions
+
+## Generic Spark Utilities
+
+`pygen-spark` provides generic utilities that work with any Spark cluster:
+
+- **`TypeConverter`**: Convert between CDF types, PySpark DataTypes, and SQL DDL
+- **`CDFConnectionConfig`**: Pydantic model for managing CDF credentials from TOML/YAML files
+- **`to_udtf_function_name()`**: Helper function for consistent UDTF naming
+
+These utilities are available in `cognite.pygen_spark` and are generic (not Databricks-specific). See the [README](../README.md) for usage examples.
 
 ## Quick Links
 
@@ -39,4 +49,5 @@ This documentation covers the complete workflow for using pygen-spark:
 - [pygen](https://github.com/cognitedata/pygen): Base code generation library for CDF Data Models
 - [cognite-databricks](https://github.com/cognitedata/cognite-databricks): Helper SDK for Databricks-specific features (Unity Catalog, Secret Manager)
 - Technical Plan: CDF Databricks Integration (UDTF-Based)
+
 

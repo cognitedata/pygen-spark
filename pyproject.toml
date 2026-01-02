@@ -49,6 +49,9 @@ Issues = "https://github.com/cognitedata/pygen-spark/issues"
 where = ["."]
 include = ["cognite*"]
 
+[tool.setuptools.package-data]
+"cognite.pygen_spark.templates" = ["*.jinja"]
+
 [tool.black]
 line-length = 100
 target-version = ['py39', 'py310', 'py311', 'py312']
