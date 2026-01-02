@@ -38,11 +38,11 @@ These utilities are available in `cognite.pygen_spark` and are generic (not Data
 
 ### Examples
 
-- [Basic Generation](../examples/basic_generation.ipynb): Generate UDTFs from a CDF Data Model
-- [Registration](../examples/registration.ipynb): Register and query UDTFs
-- [Querying Data](../examples/querying_data.ipynb): Query single/multiple UDTFs, named vs positional parameters
-- [Filtering Queries](../examples/filtering_queries.ipynb): Equality, range, NULL handling, multiple conditions
-- [Joining UDTFs](../examples/joining_udtfs.ipynb): Joins on external_id, space+external_id, CROSS JOIN LATERAL
+- [Basic Generation](../../examples/basic_generation.ipynb): Generate UDTFs from a CDF Data Model
+- [Registration](../../examples/registration.ipynb): Register and query UDTFs
+- [Querying Data](../../examples/querying_data.ipynb): Query single/multiple UDTFs, named vs positional parameters
+- [Filtering Queries](../../examples/filtering_queries.ipynb): Equality, range, NULL handling, multiple conditions
+- [Joining UDTFs](../../examples/joining_udtfs.ipynb): Joins on external_id, space+external_id, CROSS JOIN LATERAL
 
 ### Related Documentation
 
