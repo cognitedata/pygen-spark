@@ -104,7 +104,16 @@ udtf_names = [f.name for f in registered_udtfs if "udtf" in f.name.lower()]
 print("Registered UDTFs:", udtf_names)
 
 # Verify function name in SQL matches
-# If registered as "smallboat_udtf", use: SELECT * FROM smallboat_udtf(...)
+# If registered as "smallboat_udtf", use:
+# SELECT * FROM smallboat_udtf(
+#     client_id => 'your-client-id',
+#     client_secret => 'your-client-secret',
+#     tenant_id => 'your-tenant-id',
+#     cdf_cluster => 'westeurope-1',
+#     project => 'your-project',
+#     name => NULL,
+#     description => NULL
+# ) LIMIT 10;
 ```
 
 ### Issue: Configuration file not found
@@ -141,8 +150,12 @@ query = f"""
 SELECT * FROM smallboat_udtf(
     '{cognite_config["client_id"]}',
     '{cognite_config["client_secret"]}',
-    ...
-)
+    '{cognite_config["tenant_id"]}',
+    '{cognite_config["cdf_cluster"]}',
+    '{cognite_config["project"]}',
+    NULL,  -- name filter
+    NULL   -- description filter
+) LIMIT 10;
 """
 ```
 
