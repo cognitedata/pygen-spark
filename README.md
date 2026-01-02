@@ -1,6 +1,6 @@
 # pygen-spark
 
-A code generation library that extends [pygen](https://github.com/cognitedata/pygen) to generate Python User-Defined Table Functions (UDTFs) for CDF Data Models, enabling native Unity Catalog governance in Databricks.
+A code generation library that extends [pygen](https://github.com/cognitedata/pygen) to generate Python User-Defined Table Functions (UDTFs) for CDF Data Models, enabling you to query CDF data directly from Spark SQL.
 
 **Note:** This document uses PyPI package names for references:
 - **PyPI:** `cognite-pygen` (repository: `pygen`)
@@ -9,15 +9,15 @@ A code generation library that extends [pygen](https://github.com/cognitedata/py
 
 ## Overview
 
-`cognite.pygen_spark` (PyPI: `cognite-pygen-spark`) generates strongly-typed Python UDTF functions from CDF Data Models, allowing you to query CDF data directly from Databricks SQL with full Unity Catalog integration. The generated UDTFs can be registered in Unity Catalog and exposed as discoverable Views.
+`cognite.pygen_spark` (PyPI: `cognite-pygen-spark`) generates strongly-typed Python UDTF functions from CDF Data Models, allowing you to query CDF data directly from Spark SQL. The generated UDTFs work with any Spark cluster (standalone, YARN, Kubernetes, or local development).
 
 ## Features
 
 - **UDTF Generation**: Automatically generates Python UDTF functions for each View in a CDF Data Model
-- **SQL View Generation**: Creates Unity Catalog View definitions with Secret Manager integration
 - **Type Safety**: Leverages pygen's internal representation for strongly-typed code generation
 - **Predicate Pushdown**: Generated UDTFs support filter translation from Spark SQL to CDF API filters
-- **Secret Management**: Integrates with Databricks Secret Manager for secure credential handling
+- **Configuration File Support**: Uses TOML/YAML configuration files for secure credential management
+- **Generic Spark Support**: Works with any Spark cluster, not limited to Databricks
 
 ## Installation
 
@@ -40,17 +40,19 @@ client = load_cognite_client_from_toml("config.toml")
 generator = SparkUDTFGenerator(
     client=client,
     output_dir=Path("./generated_udtfs"),
-    top_level_package="cognite_databricks",
+    data_model=DataModelId(space="sailboat", external_id="sailboat", version="1"),
+    top_level_package="cognite_udtfs",
 )
 
 # Generate UDTFs for a Data Model
-data_model_id = DataModelId(space="sp_pygen_power", external_id="WindTurbine", version="1")
-udtf_files = generator.generate_udtfs(data_model_id)
+result = generator.generate_udtfs()
 
-# Generate View SQL with Secret injection
-secret_scope = f"cdf_{data_model_id.space}_{data_model_id.external_id.lower()}"
-view_sqls = generator.generate_views(data_model_id, secret_scope=secret_scope)
+print(f"Generated {result.total_count} UDTF(s)")
+for view_id, file_path in result.generated_files.items():
+    print(f"  - {view_id}: {file_path}")
 ```
+
+See the [User Guide](docs/guide/index.md) for complete documentation on generating, registering, and querying UDTFs.
 
 ## Architecture
 
@@ -65,10 +67,10 @@ See the [Technical Plan](../Technical%20Plan%20-%20CDF%20Databricks%20Integratio
 ## Requirements
 
 - Python 3.9+
+- PySpark 3.5+ (required for UDTF support)
 - `cognite-pygen` (PyPI package name; import: `cognite.pygen`)
-- `cognite-sdk-python` (dependency)
-- **Databricks Runtime 18.1+** (for custom dependencies in UDTFs)
-  - **Pre-DBR 18.1**: Code generation works on all versions; dependency bundling requires DBR 18.1+
+- `cognite-sdk-python` (must be installed on all Spark worker nodes)
+- Spark cluster (standalone, YARN, Kubernetes, or local)
 
 ## Package Structure
 
@@ -103,25 +105,45 @@ pip install -e ".[dev]"
 pytest tests/
 ```
 
-## DBR Version Compatibility
+## Spark Cluster Compatibility
 
-This package generates UDTF code that works on all Databricks Runtime versions. However, the ability to bundle Python packages with UDTFs (via `routine_dependencies`) requires DBR 18.1+.
+This package generates UDTF code that works with any Spark cluster:
 
-- **Code Generation**: Works on all DBR versions ✅
-- **UDTF Templates**: Compatible with all DBR versions ✅
-- **Dependency Bundling**: Requires DBR 18.1+ ⚠️
+- **Code Generation**: Works on all Spark versions ✅
+- **UDTF Templates**: Compatible with PySpark 3.5+ ✅
+- **Dependency Management**: Requires `cognite-sdk` on all Spark worker nodes ⚠️
 
-For pre-DBR 18.1 environments, packages must be pre-installed on the cluster. See the [cognite-databricks README](../cognite-databricks/README.md#pre-dbr-181-usage) for details.
+For standalone Spark clusters, ensure `cognite-sdk` is installed on all worker nodes. See the [Installation Guide](docs/guide/installation.md) for details.
 
 ## Related Packages
 
 - **[pygen](https://github.com/cognitedata/pygen)**: Base code generation library for CDF Data Models
-- **[cognite-databricks](https://github.com/cognitedata/cognite-databricks)**: Helper SDK for UDTF registration and Unity Catalog integration
+- **[cognite-databricks](https://github.com/cognitedata/cognite-databricks)**: Helper SDK for Databricks-specific features (Unity Catalog, Secret Manager)
 - **[cognite-sdk-python](https://github.com/cognitedata/cognite-sdk-python)**: Python SDK for CDF APIs
 
 ## Documentation
 
-For detailed documentation, see:
+### User Guide
+
+- **[Getting Started](docs/guide/index.md)**: Complete user guide for pygen-spark
+- **[Installation](docs/guide/installation.md)**: Installation and setup instructions
+- **[Generation](docs/guide/generation.md)**: Generate UDTF code from CDF Data Models
+- **[Registration](docs/guide/registration.md)**: Register UDTFs in Spark sessions
+- **[Querying](docs/guide/querying.md)**: Query UDTFs using SQL
+- **[Filtering](docs/guide/filtering.md)**: Filter data with WHERE clauses
+- **[Joining](docs/guide/joining.md)**: Join data from different UDTFs
+- **[Troubleshooting](docs/guide/troubleshooting.md)**: Common issues and solutions
+
+### Examples
+
+- **[Basic Generation](examples/basic_generation.ipynb)**: Generate UDTFs from a Data Model
+- **[Registration](examples/registration.ipynb)**: Register and query UDTFs
+- **[Querying Data](examples/querying_data.ipynb)**: Various querying patterns
+- **[Filtering Queries](examples/filtering_queries.ipynb)**: Filter examples
+- **[Joining UDTFs](examples/joining_udtfs.ipynb)**: Join examples
+
+### Technical Documentation
+
 - [Technical Plan - CDF Databricks Integration (UDTF-Based)](../Technical%20Plan%20-%20CDF%20Databricks%20Integration%20(UDTF-Based).md)
 - [Pygen Developer Documentation](https://cognite-pygen.readthedocs-hosted.com/en/latest/developer_docs/index.html)
 
