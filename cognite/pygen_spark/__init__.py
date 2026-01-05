@@ -14,6 +14,7 @@ from cognite.pygen_spark.time_series_udtfs import (
 )
 from cognite.pygen_spark.type_converter import TypeConverter
 from cognite.pygen_spark.utils import (
+    InstanceId,
     parse_instance_id,
     parse_instance_ids,
     to_udtf_function_name,
@@ -21,6 +22,7 @@ from cognite.pygen_spark.utils import (
 
 __all__ = [
     "CDFConnectionConfig",
+    "InstanceId",
     "SparkUDTFGenerator",
     "to_udtf_function_name",
     "parse_instance_id",

@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
+from pydantic import BaseModel, Field, field_validator
+
 # Short-term: Import from private API (same pattern as pygen-spark)
 # Long-term: If pygen exports this in __init__.py, we can use:
 #   from cognite.pygen import to_snake
 from cognite.pygen.utils.text import to_snake
+
+if TYPE_CHECKING:
+    from cognite.client.data_classes.data_modeling.ids import NodeId
 
 try:
     from cognite.client.data_classes.data_modeling.ids import NodeId
@@ -19,12 +26,99 @@ except ImportError:
             self.external_id = external_id
 
 
+class InstanceId(BaseModel):
+    """Pydantic model for parsing and validating instance_id strings.
+    
+    This model provides type-safe parsing of instance_id strings in the format
+    "space:external_id", aligned with pygen-main patterns of working with NodeId objects.
+    
+    Args:
+        instance_id_str: Instance ID string in format "space:external_id"
+        
+    Examples:
+        >>> instance_id = InstanceId.from_string("sailboat:ts1")
+        >>> instance_id.space
+        'sailboat'
+        >>> instance_id.external_id
+        'ts1'
+        >>> instance_id.to_node_id()
+        NodeId(space='sailboat', external_id='ts1')
+    """
+    
+    space: str = Field(..., description="Space name")
+    external_id: str = Field(..., description="External ID")
+    
+    @field_validator("space", "external_id")
+    @classmethod
+    def validate_non_empty(cls, v: str) -> str:
+        """Validate that space and external_id are non-empty after stripping."""
+        if not v or not v.strip():
+            raise ValueError("Space and external_id must be non-empty")
+        return v.strip()
+    
+    @classmethod
+    def from_string(cls, instance_id_str: str) -> InstanceId:
+        """Parse instance_id string in format 'space:external_id' to InstanceId.
+        
+        This method provides consistent parsing and validation of instance_id strings
+        across all time series UDTFs, using Pydantic validation.
+        
+        Args:
+            instance_id_str: Instance ID string in format "space:external_id"
+            
+        Returns:
+            InstanceId object
+            
+        Raises:
+            ValueError: If format is invalid or required fields are missing
+            
+        Examples:
+            >>> InstanceId.from_string("sailboat:ts1")
+            InstanceId(space='sailboat', external_id='ts1')
+            >>> InstanceId.from_string("space:external:id:with:colons")
+            InstanceId(space='space', external_id='external:id:with:colons')
+        """
+        if not instance_id_str:
+            raise ValueError("instance_id is required (format: 'space:external_id')")
+        
+        if ":" not in instance_id_str:
+            raise ValueError(
+                f"Invalid instance_id format '{instance_id_str}'. "
+                "Expected format: 'space:external_id'"
+            )
+        
+        # Split on first colon to handle external_ids that may contain colons
+        space, external_id = instance_id_str.split(":", 1)
+        
+        return cls(space=space, external_id=external_id)
+    
+    def to_node_id(self) -> NodeId:
+        """Convert InstanceId to Cognite SDK NodeId object.
+        
+        Returns:
+            NodeId object from Cognite SDK
+            
+        Raises:
+            ImportError: If cognite-sdk is not available
+        """
+        if not COGNITE_AVAILABLE:
+            # Fallback for when cognite-sdk is not available (shouldn't happen in practice)
+            return NodeId(space=self.space, external_id=self.external_id)
+        
+        from cognite.client.data_classes.data_modeling.ids import NodeId as CogniteNodeId
+        return CogniteNodeId(space=self.space, external_id=self.external_id)
+    
+    def __str__(self) -> str:
+        """Return string representation in format 'space:external_id'."""
+        return f"{self.space}:{self.external_id}"
+
+
 def parse_instance_id(instance_id_str: str) -> NodeId:
     """Parse instance_id string in format 'space:external_id' to NodeId.
     
     This function provides consistent parsing and validation of instance_id strings
-    across all time series UDTFs, aligned with pygen-main patterns of working with
-    NodeId objects.
+    across all time series UDTFs, using Pydantic for validation and aligned with
+    pygen-main patterns of working with NodeId objects.
     
     Args:
         instance_id_str: Instance ID string in format "space:external_id"
@@ -41,34 +135,16 @@ def parse_instance_id(instance_id_str: str) -> NodeId:
         >>> parse_instance_id("space:external:id:with:colons")
         NodeId(space='space', external_id='external:id:with:colons')
     """
-    if not instance_id_str:
-        raise ValueError("instance_id is required (format: 'space:external_id')")
-    
-    if ":" not in instance_id_str:
-        raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'")
-    
-    # Split on first colon to handle external_ids that may contain colons
-    space, external_id = instance_id_str.split(":", 1)
-    space = space.strip()
-    external_id = external_id.strip()
-    
-    if not space or not external_id:
-        raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty.")
-    
-    if not COGNITE_AVAILABLE:
-        # Fallback for when cognite-sdk is not available (shouldn't happen in practice)
-        return NodeId(space=space, external_id=external_id)
-    
-    from cognite.client.data_classes.data_modeling.ids import NodeId as CogniteNodeId
-    return CogniteNodeId(space=space, external_id=external_id)
+    instance_id = InstanceId.from_string(instance_id_str)
+    return instance_id.to_node_id()
 
 
 def parse_instance_ids(instance_ids_str: str) -> list[NodeId]:
     """Parse comma-separated instance_ids string to list of NodeId.
     
     This function provides consistent parsing and validation of comma-separated
-    instance_id strings across all time series UDTFs, aligned with pygen-main
-    patterns of working with NodeId objects.
+    instance_id strings across all time series UDTFs, using Pydantic for validation
+    and aligned with pygen-main patterns of working with NodeId objects.
     
     Args:
         instance_ids_str: Comma-separated instance IDs in format "space1:ext_id1,space2:ext_id2"
