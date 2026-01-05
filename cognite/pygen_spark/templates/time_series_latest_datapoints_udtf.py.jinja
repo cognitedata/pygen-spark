@@ -3,7 +3,7 @@
 This UDTF retrieves the latest datapoint(s) for one or more Time Series using instance_id.
 Similar to client.time_series.data.retrieve_latest()
 Returns rows in format: (time_series_external_id, timestamp, value, status_code)
-Note: time_series_external_id identifies which time series, space is same for all.
+Note: time_series_external_id is in format "space:external_id" to support time series from different spaces.
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ class TimeSeriesLatestDatapointsUDTF:
     
     Similar to client.time_series.data.retrieve_latest()
     Returns rows in format: (time_series_external_id, timestamp, value, status_code)
-    Note: time_series_external_id identifies which time series, space is same for all.
+    Note: time_series_external_id is in format "space:external_id" to support time series from different spaces.
     """
     
     @staticmethod
@@ -62,8 +62,7 @@ class TimeSeriesLatestDatapointsUDTF:
     
     @staticmethod
     def analyze(
-        space: str | None = None,
-        external_ids: str | None = None,  # Comma-separated list
+        instance_ids: str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2"
         before: str | None = None,
         include_status: bool = False,
         client_id: str | None = None,
@@ -75,8 +74,7 @@ class TimeSeriesLatestDatapointsUDTF:
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
         Args:
-            space: CDF space name (required)
-            external_ids: Comma-separated list of external_ids (e.g., "foo,bar,baz")
+            instance_ids: Comma-separated list of instance IDs in format "space:external_id" (e.g., "sailboat:ts1,otherspace:ts2")
             before: Get latest before this time (ISO 8601 or "1h-ago", "now", etc.)
             include_status: Include status code in output
             client_id, client_secret, tenant_id, cdf_cluster, project: OAuth credentials
@@ -185,8 +183,7 @@ class TimeSeriesLatestDatapointsUDTF:
     
     def eval(
         self,
-        space: str | None = None,
-        external_ids: str | None = None,  # Comma-separated: "foo,bar,baz"
+        instance_ids: str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2"
         before: str | None = None,  # Get latest before this time (e.g., "1h-ago")
         include_status: bool = False,
         client_id: str | None = None,
@@ -198,8 +195,7 @@ class TimeSeriesLatestDatapointsUDTF:
         """Retrieve latest datapoint(s) for one or more time series using instance_id.
         
         Args:
-            space: CDF space name (required)
-            external_ids: Comma-separated list of external_ids (e.g., "foo,bar,baz")
+            instance_ids: Comma-separated list of instance IDs in format "space:external_id" (e.g., "sailboat:ts1,otherspace:ts2")
             before: Get latest before this time (ISO 8601 or "1h-ago", "now", etc.)
             include_status: Include status code in output
             client_id: OAuth2 client ID
@@ -209,7 +205,7 @@ class TimeSeriesLatestDatapointsUDTF:
             project: CDF project name
         
         Yields:
-            (time_series_external_id, timestamp, value, status_code) tuples
+            (time_series_external_id, timestamp, value, status_code) tuples where time_series_external_id is in format "space:external_id"
         """
         import sys
         import traceback
@@ -256,17 +252,38 @@ class TimeSeriesLatestDatapointsUDTF:
                 yield (None, None, None, None)
                 return
             
-            # Validate inputs
-            if not space or not external_ids:
-                sys.stderr.write("ERROR: Both space and external_ids are required\n")
+            # Validate and parse instance_ids
+            try:
+                # Import parse function (may not be available if package not installed)
+                try:
+                    from cognite.pygen_spark.utils import parse_instance_ids
+                except ImportError:
+                    # Fallback parsing if utils not available
+                    def parse_instance_ids(instance_ids_str: str) -> list[NodeId]:
+                        if not instance_ids_str:
+                            raise ValueError("instance_ids is required (format: 'space1:ext_id1,space2:ext_id2')")
+                        node_ids = []
+                        for instance_id_str in instance_ids_str.split(","):
+                            instance_id_str = instance_id_str.strip()
+                            if not instance_id_str:
+                                continue
+                            if ":" not in instance_id_str:
+                                raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'")
+                            space, external_id = instance_id_str.split(":", 1)
+                            space = space.strip()
+                            external_id = external_id.strip()
+                            if not space or not external_id:
+                                raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty.")
+                            node_ids.append(NodeId(space=space, external_id=external_id))
+                        if not node_ids:
+                            raise ValueError("At least one valid instance_id is required")
+                        return node_ids
+                
+                node_ids = parse_instance_ids(instance_ids)
+            except ValueError as e:
+                sys.stderr.write(f"ERROR: {str(e)}\n")
                 yield (None, None, None, None)
                 return
-            
-            # Parse comma-separated external_ids
-            external_id_list = [eid.strip() for eid in external_ids.split(",")]
-            
-            # Create NodeId list
-            instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             if not before:
                 before = "now"
@@ -274,21 +291,23 @@ class TimeSeriesLatestDatapointsUDTF:
             try:
                 # Use instance_id for query
                 datapoints_list = self.client.time_series.data.retrieve_latest(
-                    instance_id=instance_ids,
+                    instance_id=node_ids,
                     before=before,
                     include_status=include_status,
                 )
                 
-                # Yield latest datapoints (no space needed - same for all)
+                # Yield latest datapoints with space:external_id identifier
                 row_count = 0
                 for dps in datapoints_list:
                     if dps is None:  # Time series not found
                         continue
                     
-                    # Extract external_id from instance_id
-                    ts_external_id = dps.instance_id.external_id if dps.instance_id else None
-                    
-                    if not ts_external_id:
+                    # Extract space and external_id from instance_id for display
+                    if dps.instance_id:
+                        space = dps.instance_id.space
+                        ext_id = dps.instance_id.external_id
+                        ts_external_id = f"{space}:{ext_id}"
+                    else:
                         # Fallback: try to get from external_id attribute
                         ts_external_id = dps.external_id if hasattr(dps, 'external_id') and dps.external_id else None
                     

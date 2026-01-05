@@ -13,12 +13,18 @@ from cognite.pygen_spark.time_series_udtfs import (
     TimeSeriesLatestDatapointsUDTF,
 )
 from cognite.pygen_spark.type_converter import TypeConverter
-from cognite.pygen_spark.utils import to_udtf_function_name
+from cognite.pygen_spark.utils import (
+    parse_instance_id,
+    parse_instance_ids,
+    to_udtf_function_name,
+)
 
 __all__ = [
     "CDFConnectionConfig",
     "SparkUDTFGenerator",
     "to_udtf_function_name",
+    "parse_instance_id",
+    "parse_instance_ids",
     "TypeConverter",
     "UDTFField",
     "UDTFGenerationResult",
