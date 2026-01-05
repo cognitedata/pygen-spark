@@ -100,8 +100,7 @@ Query datapoints from a single time series:
 
 ```sql
 SELECT * FROM time_series_datapoints_udtf(
-    space => 'sailboat',
-    external_id => 'vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.speedOverGround',
+    instance_id => 'sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.speedOverGround',
     start => '1d-ago',
     end => 'now',
     client_id => 'your-client-id',
@@ -113,20 +112,20 @@ SELECT * FROM time_series_datapoints_udtf(
 ```
 
 **Parameters:**
-- `space`: Space name for the time series
-- `external_id`: External ID of the time series
+- `instance_id`: Instance ID in format "space:external_id" (required)
 - `start`: Start time (supports relative times like '1d-ago' or ISO 8601 timestamps)
 - `end`: End time (supports 'now' or ISO 8601 timestamps)
+- `aggregates`: Optional aggregate type (e.g., "average", "max", "min", "count")
+- `granularity`: Optional granularity for aggregates (e.g., "1h", "1d", "30s")
 - `client_id`, `client_secret`, `tenant_id`, `cdf_cluster`, `project`: CDF credentials
 
 ## Querying Multiple Time Series (Long Format)
 
-Query multiple time series in long format (one row per datapoint):
+Query multiple time series in long format (one row per datapoint). Time series can be from different spaces:
 
 ```sql
 SELECT * FROM time_series_datapoints_long_udtf(
-    space => 'sailboat',
-    external_ids => 'ts1,ts2,ts3',  -- Comma-separated string
+    instance_ids => 'sailboat:ts1,otherspace:ts2,sailboat:ts3',  -- Format: "space:external_id"
     start => '1d-ago',
     end => 'now',
     client_id => 'your-client-id',
@@ -137,16 +136,23 @@ SELECT * FROM time_series_datapoints_long_udtf(
 ) ORDER BY time_series_external_id, timestamp LIMIT 20;
 ```
 
-**Note**: `external_ids` is a comma-separated string, not an array.
+**Parameters:**
+- `instance_ids`: Comma-separated string of instance IDs in format `"space:external_id"` (e.g., `"sailboat:ts1,otherspace:ts2"`)
+- `start`: Start time (supports relative times like '1d-ago' or ISO 8601 timestamps)
+- `end`: End time (supports 'now' or ISO 8601 timestamps)
+- `aggregates`: Optional aggregate type (e.g., "average", "max", "min")
+- `granularity`: Optional granularity for aggregates (e.g., "1h", "30d")
+- `include_aggregate_name`: Whether to include aggregate name in time_series_external_id
+
+**Note**: The `time_series_external_id` in the output is in format `"space:external_id"` to support time series from different spaces.
 
 ## Querying Latest Datapoints
 
-Get the latest datapoints for one or more time series:
+Get the latest datapoints for one or more time series. Time series can be from different spaces:
 
 ```sql
 SELECT * FROM time_series_latest_datapoints_udtf(
-    space => 'sailboat',
-    external_ids => 'ts1,ts2,ts3',  -- Comma-separated string
+    instance_ids => 'sailboat:ts1,otherspace:ts2,sailboat:ts3',  -- Format: "space:external_id"
     before => 'now',
     include_status => true,
     client_id => 'your-client-id',
@@ -158,10 +164,11 @@ SELECT * FROM time_series_latest_datapoints_udtf(
 ```
 
 **Parameters:**
-- `space`: Space name (single string, not array)
-- `external_ids`: Comma-separated string of external IDs
+- `instance_ids`: Comma-separated string of instance IDs in format `"space:external_id"` (e.g., `"sailboat:ts1,otherspace:ts2"`)
 - `before`: Get latest datapoint before this time (supports 'now' or ISO 8601 timestamps)
 - `include_status`: Whether to include status codes in the result
+
+**Note**: The `time_series_external_id` in the output is in format `"space:external_id"` to support time series from different spaces.
 
 ## Using with Data Model Views
 

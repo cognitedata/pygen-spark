@@ -9,6 +9,7 @@ from typing import Iterator
 try:
     from cognite.client import CogniteClient
     from cognite.client.data_classes.data_modeling.ids import ViewId
+    from cognite.client.data_classes.filters import Filter
     from cognite.client.config import ClientConfig
     from cognite.client.credentials import OAuthClientCredentials
     COGNITE_AVAILABLE = True
@@ -20,6 +21,8 @@ except ImportError as import_error:
     class CogniteClient:
         pass
     class ViewId:
+        pass
+    class Filter:
         pass
     class ClientConfig:
         pass
@@ -138,13 +141,13 @@ class {{ view.external_id|title }}UDTF:
                 if client_id is None or client_secret is None:
                     error_msg = "Missing credentials: client_id and client_secret are required for session-scoped UDTFs"
                     error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
                     yield (
-                        f"ERROR: Initialization failed [{error_category}]: {error_msg}",
 {% for prop in properties %}
                         None,
 {% endfor %}
-                        None,  # space
-                        None,  # external_id
+                        "None",  # space (error indicator)
+                        "None",  # external_id (error indicator)
                     )
                     return
                 
@@ -152,13 +155,13 @@ class {{ view.external_id|title }}UDTF:
                 if not COGNITE_AVAILABLE:
                     error_msg = f"Missing dependencies: {IMPORT_ERROR}. Install cognite-sdk or use DBR 18.1+ with ENVIRONMENT clause."
                     error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
                     yield (
-                        f"ERROR: Initialization failed [{error_category}]: {error_msg}",
 {% for prop in properties %}
                         None,
 {% endfor %}
-                        None,  # space
-                        None,  # external_id
+                        "None",  # space (error indicator)
+                        "None",  # external_id (error indicator)
                     )
                     return
                 
@@ -174,13 +177,13 @@ class {{ view.external_id|title }}UDTF:
                         self._init_error_category = 'UNKNOWN'
                     self._init_error = f"{type(e).__name__}: {str(e)}"
                     self._client_initialized = True
+                    sys.stderr.write(f"[UDTF] ✗ {self._init_error_category}: {self._init_error}\n")
                     yield (
-                        f"ERROR: Initialization failed [{self._init_error_category}]: {self._init_error}",
 {% for prop in properties %}
                         None,
 {% endfor %}
-                        None,  # space
-                        None,  # external_id
+                        "None",  # space (error indicator)
+                        "None",  # external_id (error indicator)
                     )
                     return
             
@@ -188,13 +191,13 @@ class {{ view.external_id|title }}UDTF:
             if not hasattr(self, '_init_success') or not self._init_success or self._init_error is not None:
                 error_msg = getattr(self, '_init_error', 'Unknown initialization error')
                 error_category = getattr(self, '_init_error_category', 'UNKNOWN')
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
                 yield (
-                    f"ERROR: Initialization failed [{error_category}]: {error_msg}",
 {% for prop in properties %}
                     None,
 {% endfor %}
-                    None,  # space
-                    None,  # external_id
+                    "None",  # space (error indicator)
+                    "None",  # external_id (error indicator)
                 )
                 return
             
@@ -207,7 +210,7 @@ class {{ view.external_id|title }}UDTF:
             
             try:
                 sys.stderr.write(f"[UDTF] Querying CDF View: {{ view.space }}.{{ view.external_id }} {{ view.version }}\n")
-                sys.stderr.write(f"[UDTF] Filter keys: {list(filters.keys()) if filters else 'None'}\n")
+                sys.stderr.write(f"[UDTF] Filter: {type(filters).__name__ if filters else 'None'}\n")
                 
                 # Query CDF Data Model Instances by View (views are independent of data models)
                 instances = self.client.data_modeling.instances.list(
@@ -244,35 +247,33 @@ class {{ view.external_id|title }}UDTF:
 {% for prop in properties %}
                         None,
 {% endfor %}
-                        None,  # space
-                        None,  # external_id
+                        "None",  # space (error indicator)
+                        "None",  # external_id (error indicator)
                     )
             except Exception as e:
                 # Log error for debugging
                 error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
                 sys.stderr.write(error_info)
-                # Yield a row with error information in first column, rest None
-                # This allows the query to return an error row instead of failing silently
+                # Yield a row with all None values to match schema
+                # Error information is logged to stderr, not included in the result
                 yield (
-                    f"ERROR: {type(e).__name__}: {str(e)}",
 {% for prop in properties %}
                     None,
 {% endfor %}
-                    None,  # space
-                    None,  # external_id
+                    "None",  # space (error indicator)
+                    "None",  # external_id (error indicator)
                 )
         except Exception as outer_error:
-            # Last resort: if anything goes wrong, yield an error row
+            # Last resort: if anything goes wrong, yield a row with all None values
             # This ensures we always return something, preventing "end-of-input" errors
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n{traceback.format_exc()}\n")
             yield (
-                error_info,
 {% for prop in properties %}
                 None,
 {% endfor %}
-                None,  # space
-                None,  # external_id
+                "None",  # space (error indicator)
+                "None",  # external_id (error indicator)
             )
 
     def _extract_property_value(self, value: object) -> object:
@@ -486,17 +487,56 @@ class {{ view.external_id|title }}UDTF:
         # Default to unknown
         return 'UNKNOWN'
     
-    def _build_cdf_filter(self, filters: dict[str, object]) -> dict[str, object]:
+    def _build_cdf_filter(self, filters: dict[str, object]) -> Filter | None:
         """Build CDF API filter from input parameters.
+        
+        This follows the same pattern as pygen-main's filter generation,
+        using view_id.as_property_ref() to create proper property references
+        and Filter objects (Equals, In, etc.) instead of plain dictionaries.
         
         Args:
             filters: Dictionary of filter conditions
         
         Returns:
-            CDF API filter dictionary
+            CDF API Filter object or None if no filters
         """
+        from cognite.client.data_classes.filters import Equals, In, And
+        from cognite.client.data_classes.data_modeling.ids import ViewId
+        
         # Filter out None values
-        return {k: v for k, v in filters.items() if v is not None}
+        active_filters = {k: v for k, v in filters.items() if v is not None}
+        
+        if not active_filters:
+            return None
+        
+        # Create ViewId for property references (like pygen-main does)
+        view_id = ViewId(
+            space="{{ view.space }}",
+            external_id="{{ view.external_id }}",
+            version="{{ view.version }}",
+        )
+        
+        # Create Filter objects for each property
+        filter_objects = []
+        for prop_name, prop_value in active_filters.items():
+            # Use view_id.as_property_ref() like pygen-main does
+            property_ref = view_id.as_property_ref(prop_name)
+            
+            # Handle different value types (matching pygen-main's logic)
+            if isinstance(prop_value, list):
+                # List values use In filter
+                filter_objects.append(In(property_ref, values=prop_value))
+            else:
+                # Single values use Equals filter
+                filter_objects.append(Equals(property_ref, value=prop_value))
+        
+        # Combine multiple filters with And (like pygen-main does)
+        if len(filter_objects) == 1:
+            return filter_objects[0]
+        elif len(filter_objects) > 1:
+            return And(filter_objects)
+        else:
+            return None
 
     @staticmethod
     def outputSchema() -> StructType:

@@ -60,8 +60,7 @@ class TimeSeriesDatapointsUDTF:
     
     @staticmethod
     def analyze(
-        space: str | None = None,
-        external_id: str | None = None,
+        instance_id: str | None = None,  # Format: "space:external_id"
         start: str | None = None,
         end: str | None = None,
         aggregates: str | None = None,
@@ -78,8 +77,7 @@ class TimeSeriesDatapointsUDTF:
         For Unity Catalog registration, this method is optional but harmless if present.
         
         Args:
-            space: CDF space name (required)
-            external_id: CDF external_id (required)
+            instance_id: Instance ID in format "space:external_id" (required)
             start: Start timestamp (ISO 8601 or "2w-ago", "1d-ago", etc.)
             end: End timestamp (ISO 8601 or "now", "1d-ahead", etc.)
             aggregates: Optional aggregate type (e.g., "average", "max", "min", "count")
@@ -201,8 +199,7 @@ class TimeSeriesDatapointsUDTF:
     
     def eval(
         self,
-        space: str | None = None,
-        external_id: str | None = None,
+        instance_id: str | None = None,  # Format: "space:external_id"
         start: str | None = None,
         end: str | None = None,
         aggregates: str | None = None,
@@ -213,11 +210,10 @@ class TimeSeriesDatapointsUDTF:
         cdf_cluster: str | None = None,
         project: str | None = None,
     ) -> Iterator[tuple[object, ...]]:
-        """Execute UDTF using instance_id (space + external_id) for query.
+        """Execute UDTF using instance_id (space:external_id) for query.
         
         Args:
-            space: CDF space name (required)
-            external_id: CDF external_id (required)
+            instance_id: Instance ID in format "space:external_id" (required)
             start: Start timestamp (ISO 8601 or "2w-ago", "1d-ago", etc.)
             end: End timestamp (ISO 8601 or "now", "1d-ahead", etc.)
             aggregates: Optional aggregate type (e.g., "average", "max", "min", "count")
@@ -276,9 +272,28 @@ class TimeSeriesDatapointsUDTF:
                 yield (None, None)
                 return
             
-            # Validate inputs
-            if not space or not external_id:
-                sys.stderr.write("ERROR: Both space and external_id are required\n")
+            # Validate and parse instance_id
+            try:
+                # Import parse function (may not be available if package not installed)
+                try:
+                    from cognite.pygen_spark.utils import parse_instance_id
+                except ImportError:
+                    # Fallback parsing if utils not available
+                    def parse_instance_id(instance_id_str: str) -> NodeId:
+                        if not instance_id_str:
+                            raise ValueError("instance_id is required (format: 'space:external_id')")
+                        if ":" not in instance_id_str:
+                            raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'")
+                        space, external_id = instance_id_str.split(":", 1)
+                        space = space.strip()
+                        external_id = external_id.strip()
+                        if not space or not external_id:
+                            raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty.")
+                        return NodeId(space=space, external_id=external_id)
+                
+                node_id = parse_instance_id(instance_id)
+            except ValueError as e:
+                sys.stderr.write(f"ERROR: {str(e)}\n")
                 yield (None, None)
                 return
             
@@ -290,7 +305,7 @@ class TimeSeriesDatapointsUDTF:
             try:
                 # Use instance_id (NodeId) for query
                 datapoints = self.client.time_series.data.retrieve(
-                    instance_id=NodeId(space, external_id),
+                    instance_id=node_id,
                     start=start,
                     end=end,
                     aggregates=[aggregates] if aggregates else None,
