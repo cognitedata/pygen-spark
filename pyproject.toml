@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.9.15,<0.10.0"]
+build-backend = "uv_build"
 
 [project]
 name = "cognite-pygen-spark"
@@ -44,12 +44,9 @@ Documentation = "https://cognite-pygen-spark.readthedocs.io"
 Repository = "https://github.com/cognitedata/pygen-spark"
 Issues = "https://github.com/cognitedata/pygen-spark/issues"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["cognite*"]
-
-[tool.setuptools.package-data]
-"cognite.pygen_spark.templates" = ["*.jinja"]
+[tool.uv.build-backend]
+module-name = "cognite.pygen_spark"
+module-root = ""
 
 [tool.black]
 line-length = 100
