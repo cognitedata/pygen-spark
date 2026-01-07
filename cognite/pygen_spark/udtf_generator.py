@@ -9,7 +9,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 
 # Short-term: Import from private API (required until pygen exports this)
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
-from cognite.pygen._core.generators import MultiAPIGenerator
+from cognite.pygen._core.generators import MultiAPIGenerator  # type: ignore[import-untyped]
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 
 # Import relationship types directly from views module (matching pygen-main's approach)
