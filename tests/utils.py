@@ -65,13 +65,14 @@ def create_mock_view(
     if properties is None:
         properties = {"name": dm.Text()}
 
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
     return dm.View(
         space=space,
         external_id=external_id,
         version=version,
         properties=properties,
-        created_time=datetime.now(timezone.utc),
-        last_updated_time=datetime.now(timezone.utc),
+        created_time=now_ms,
+        last_updated_time=now_ms,
         name=external_id,
         description="",
         filter=None,

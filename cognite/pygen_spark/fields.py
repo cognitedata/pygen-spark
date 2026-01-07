@@ -231,7 +231,6 @@ class UDTFField:
             from pyspark.sql.types import (
                 ArrayType,
                 BooleanType,
-                DateType,
                 DoubleType,
                 LongType,
                 StringType,

@@ -169,7 +169,6 @@ class TimeSeriesDatapointsUDTF:
                 
                 # Check if dependencies are available
                 if not COGNITE_AVAILABLE:
-                    error_msg = f"Missing dependencies: {IMPORT_ERROR}. Install cognite-sdk."
                     yield (None, None)
                     return
                 
@@ -451,7 +450,11 @@ class TimeSeriesDatapointsLongUDTF:
                             timestamps = dps.timestamp
                             for ts_ms, val in zip(timestamps, values):
                                 # Convert milliseconds timestamp to datetime for PySpark TimestampType
-                                timestamp_dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc) if ts_ms is not None else None
+                                timestamp_dt = (
+                                    datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+                                    if ts_ms is not None
+                                    else None
+                                )
                                 yield (timestamp_dt, ts_external_id, val)
                                 row_count += 1
                         else:

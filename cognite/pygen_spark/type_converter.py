@@ -51,6 +51,7 @@ class TypeConverter:
         from cognite.client import data_modeling as dm
         
         # Map CDF property types to PySpark types
+        base_type: DataType
         if isinstance(property_type, dm.Int32 | dm.Int64):
             base_type = LongType()
         elif isinstance(property_type, dm.Boolean):
