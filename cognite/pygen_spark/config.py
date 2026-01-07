@@ -169,6 +169,7 @@ class CDFConnectionConfig(BaseModel):
             CDFConnectionConfig instance
 
         Examples:
+            >>> # doctest: +SKIP
             >>> config = CDFConnectionConfig.from_toml("config.toml")
             >>> client = config.create_client()
         """

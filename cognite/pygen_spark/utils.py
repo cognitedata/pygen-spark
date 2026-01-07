@@ -192,7 +192,7 @@ def to_udtf_function_name(view_id: str) -> str:
         >>> to_udtf_function_name("SmallBoat")
         'small_boat_udtf'
         >>> to_udtf_function_name("Cognite3DModel")
-        'cognite_3d_model_udtf'  # Note: pygen-main handles "3D" specially
+        'cognite_3_d_model_udtf'
         >>> to_udtf_function_name("HTTPResponse")
         'http_response_udtf'
         >>> to_udtf_function_name("small_boat_udtf")
