@@ -21,6 +21,7 @@ from cognite.pygen_spark.utils import (
 )
 
 __all__ = [
+    "__version__",
     "CDFConnectionConfig",
     "InstanceId",
     "SparkUDTFGenerator",
