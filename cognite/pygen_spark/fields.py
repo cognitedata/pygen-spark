@@ -98,7 +98,7 @@ class UDTFField:
             Spark SQL type instantiation code (e.g., "StringType()", "LongType()", "ArrayType(StringType())")
         """
         # Helper to get base type string
-        def get_base_type(prop_type) -> str:
+        def get_base_type(prop_type: object) -> str:
             """Get base Spark type string."""
             if prop_type is None:
                 return "StringType"
@@ -242,7 +242,7 @@ class UDTFField:
             return StringType()  # type: ignore[return-value]
         
         # Helper to get base type object
-        def get_base_type_object(prop_type) -> DataType:
+        def get_base_type_object(prop_type: object) -> DataType:
             """Get base Spark type object."""
             if prop_type is None:
                 return StringType()
