@@ -23,11 +23,11 @@ def sample_view() -> dm.View:
         last_updated_time=2,
         name="",
         description="",
-        properties={  # type: ignore[dict-item]
-            "name": dm.Text(),
-            "description": dm.Text(),
-            "boat_guid": dm.Int64(),
-            "mmsi_country": dm.Text(),
+        properties={
+            "name": dm.Text(),  # type: ignore[dict-item]
+            "description": dm.Text(),  # type: ignore[dict-item]
+            "boat_guid": dm.Int64(),  # type: ignore[dict-item]
+            "mmsi_country": dm.Text(),  # type: ignore[dict-item]
         },
         filter=None,
         implements=None,
@@ -74,10 +74,10 @@ def spark_multi_api_generator(
     sample_data_model: dm.DataModel[dm.View],
 ) -> SparkMultiAPIGenerator:
     """SparkMultiAPIGenerator instance for testing."""
-    return SparkMultiAPIGenerator(  # type: ignore[call-arg]
-        top_level_package="test_package",
-        client_name="TestClient",
-        data_models=[sample_data_model],
-        default_instance_space="test_space",
+    return SparkMultiAPIGenerator(  # type: ignore
+        top_level_package="test_package",  # type: ignore[arg-type]
+        client_name="TestClient",  # type: ignore[arg-type]
+        data_models=[sample_data_model],  # type: ignore[arg-type]
+        default_instance_space="test_space",  # type: ignore[arg-type]
     )
 

@@ -203,10 +203,14 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             # Set defaults for start/end if not provided
-            start_value = start if start else "2w-ago"  # Default to last 2 weeks
-            end_value = end if end else "now"
+            start_value: str = start if start else "2w-ago"  # Default to last 2 weeks
+            end_value: str = end if end else "now"
             
             try:
+                # Ensure client is initialized
+                if self.client is None:
+                    yield (None, None)
+                    return
                 # Use instance_id (NodeId) for query
                 datapoints = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
                     instance_id=NodeId(space, external_id),
@@ -418,10 +422,14 @@ class TimeSeriesDatapointsLongUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set defaults for start/end if not provided
-            start_value = start if start else "2w-ago"
-            end_value = end if end else "now"
+            start_value: str = start if start else "2w-ago"
+            end_value: str = end if end else "now"
             
             try:
+                # Ensure client is initialized
+                if self.client is None:
+                    yield (None, None, None)
+                    return
                 # Use instance_id for query
                 datapoints_list = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
                     instance_id=instance_ids,
@@ -633,9 +641,13 @@ class TimeSeriesLatestDatapointsUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set default for before if not provided
-            before_value = before if before else "now"
+            before_value: str = before if before else "now"
             
             try:
+                # Ensure client is initialized
+                if self.client is None:
+                    yield (None, None, None, None)
+                    return
                 # Use instance_id for query
                 datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr]
                     instance_id=instance_ids,

@@ -74,14 +74,14 @@ class SparkUDTFGenerator(SDKGenerator):
         data_models_list = (
             [loaded_data_model] if isinstance(loaded_data_model, dm.DataModel) else list(loaded_data_model)
         )
-        self.udtf_generator = SparkMultiAPIGenerator(  # type: ignore[call-arg]
-            top_level_package=top_level_package,
-            client_name=client_name,
-            data_models=data_models_list,
-            default_instance_space=kwargs.get("default_instance_space", None),
-            implements=kwargs.get("implements", "inheritance"),
-            logger=kwargs.get("logger", None),
-            config=kwargs.get("config", PygenConfig()),
+        self.udtf_generator = SparkMultiAPIGenerator(  # type: ignore
+            top_level_package=top_level_package,  # type: ignore[arg-type]
+            client_name=client_name,  # type: ignore[arg-type]
+            data_models=data_models_list,  # type: ignore[arg-type]
+            default_instance_space=kwargs.get("default_instance_space", None),  # type: ignore[arg-type]
+            implements=kwargs.get("implements", "inheritance"),  # type: ignore[arg-type]
+            logger=kwargs.get("logger", None),  # type: ignore[arg-type]
+            config=kwargs.get("config", PygenConfig()),  # type: ignore[arg-type]
         )
 
     def _load_data_model(

@@ -41,11 +41,11 @@ def sample_sailboat_view() -> dm.View:
         last_updated_time=2,
         name="",
         description="",
-        properties={  # type: ignore[dict-item]
-            "name": dm.Text(),
-            "description": dm.Text(),
-            "boat_guid": dm.Int64(),
-            "mmsi_country": dm.Text(),
+        properties={
+            "name": dm.Text(),  # type: ignore[dict-item]
+            "description": dm.Text(),  # type: ignore[dict-item]
+            "boat_guid": dm.Int64(),  # type: ignore[dict-item]
+            "mmsi_country": dm.Text(),  # type: ignore[dict-item]
         },
         filter=None,
         implements=None,
@@ -66,9 +66,9 @@ def sample_nmea_time_series_view() -> dm.View:
         last_updated_time=2,
         name="",
         description="",
-        properties={  # type: ignore[dict-item]
-            "mmsi": dm.Text(),
-            "value": dm.Float64(),
+        properties={
+            "mmsi": dm.Text(),  # type: ignore[dict-item]
+            "value": dm.Float64(),  # type: ignore[dict-item]
         },
         filter=None,
         implements=None,
