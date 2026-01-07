@@ -1,23 +1,50 @@
 """Tests for UDTF generation functionality."""
 
-from pathlib import Path
+from __future__ import annotations
 
 import pytest
 
-from cognite.client.data_classes.data_modeling.ids import DataModelId
 from cognite.pygen_spark import SparkUDTFGenerator
 
 
-def test_generate_udtfs():
+def test_generate_udtfs(
+    spark_udtf_generator: SparkUDTFGenerator,
+    sample_view,
+) -> None:
     """Test basic UDTF generation."""
-    # This is a placeholder test
-    # Real implementation would require a mock CogniteClient
-    pass
+    result = spark_udtf_generator.generate_udtfs()
+    
+    assert result is not None
+    assert result.total_count > 0
+    assert len(result.generated_files) > 0
+    
+    # Verify files were created
+    for file_path in result.file_paths:
+        assert file_path.exists()
+        assert file_path.suffix == ".py"
+        
+        # Verify file content
+        code = file_path.read_text()
+        assert len(code) > 0
+        assert "class" in code
 
 
-def test_generate_views():
+def test_generate_views(
+    spark_udtf_generator: SparkUDTFGenerator,
+    sample_view,
+) -> None:
     """Test SQL View generation."""
-    # This is a placeholder test
-    # Real implementation would require a mock CogniteClient
-    pass
+    result = spark_udtf_generator.generate_view_sql(
+        view=sample_view,
+        secret_scope="test_scope",
+    )
+    
+    assert result is not None
+    assert result.view_id == sample_view.external_id
+    assert result.sql_content is not None
+    assert len(result.sql_content) > 0
+    
+    # Verify SQL content structure
+    sql_upper = result.sql_content.upper()
+    assert "CREATE" in sql_upper or "SELECT" in sql_upper
 
