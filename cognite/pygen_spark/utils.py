@@ -196,7 +196,7 @@ def to_udtf_function_name(view_id: str) -> str:
         >>> to_udtf_function_name("HTTPResponse")
         'http_response_udtf'
         >>> to_udtf_function_name("small_boat_udtf")
-        'small_boat_udtf'  # Already in correct format
+        'small_boat_udtf'
     """
     # If already ends with _udtf, return as-is
     if view_id.lower().endswith("_udtf"):
