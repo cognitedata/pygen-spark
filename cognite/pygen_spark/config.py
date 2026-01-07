@@ -169,9 +169,8 @@ class CDFConnectionConfig(BaseModel):
             CDFConnectionConfig instance
 
         Examples:
-            >>> # doctest: +SKIP
-            >>> config = CDFConnectionConfig.from_toml("config.toml")
-            >>> client = config.create_client()
+            >>> config = CDFConnectionConfig.from_toml("config.toml")  # doctest: +SKIP
+            >>> client = config.create_client()  # doctest: +SKIP
         """
         toml_path = Path(toml_file)
         if not toml_path.exists():
