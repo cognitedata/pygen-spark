@@ -24,8 +24,8 @@ class TestSparkUDTFGenerator:
         sample_data_model: dm.DataModel[dm.View],
     ) -> None:
         """Test generator initialization."""
-        generator = SparkUDTFGenerator(  # type: ignore[arg-type]
-            client=mock_cognite_client,
+        generator = SparkUDTFGenerator(
+            client=mock_cognite_client,  # type: ignore[arg-type]
             output_dir=temp_output_dir,
             data_model=sample_data_model,
         )

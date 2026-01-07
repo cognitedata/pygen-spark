@@ -203,8 +203,8 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             # Set defaults for start/end if not provided
-            start_value: str = start if start else "2w-ago"  # Default to last 2 weeks
-            end_value: str = end if end else "now"
+            start_value: str = start or "2w-ago"  # Default to last 2 weeks
+            end_value: str = end or "now"
             
             try:
                 # Ensure client is initialized
@@ -422,8 +422,8 @@ class TimeSeriesDatapointsLongUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set defaults for start/end if not provided
-            start_value: str = start if start else "2w-ago"
-            end_value: str = end if end else "now"
+            start_value: str = start or "2w-ago"
+            end_value: str = end or "now"
             
             try:
                 # Ensure client is initialized
@@ -641,7 +641,7 @@ class TimeSeriesLatestDatapointsUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set default for before if not provided
-            before_value: str = before if before else "now"
+            before_value: str = before or "now"
             
             try:
                 # Ensure client is initialized
