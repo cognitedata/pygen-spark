@@ -34,17 +34,19 @@ def test_generate_views(
     sample_view,
 ) -> None:
     """Test SQL View generation."""
-    result = spark_udtf_generator.generate_view_sql(
-        view=sample_view,
+    result = spark_udtf_generator.generate_views(
+        data_model=None,
         secret_scope="test_scope",
     )
     
     assert result is not None
-    assert result.view_id == sample_view.external_id
-    assert result.sql_content is not None
-    assert len(result.sql_content) > 0
+    assert result.total_count > 0
+    assert len(result.view_sqls) > 0
     
     # Verify SQL content structure
-    sql_upper = result.sql_content.upper()
-    assert "CREATE" in sql_upper or "SELECT" in sql_upper
+    for view_id, sql_content in result.view_sqls.items():
+        assert sql_content is not None
+        assert len(sql_content) > 0
+        sql_upper = sql_content.upper()
+        assert "CREATE" in sql_upper or "SELECT" in sql_upper
 

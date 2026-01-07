@@ -78,6 +78,6 @@ def spark_multi_api_generator(
         top_level_package="test_package",
         client_name="TestClient",
         data_models=[sample_data_model],
-        instance_space="test_space",
+        default_instance_space="test_space",
     )
 

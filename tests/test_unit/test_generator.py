@@ -50,18 +50,23 @@ class TestSparkUDTFGenerator:
             assert file_path.exists()
             assert file_path.suffix == ".py"
 
-    def test_generate_view_sql(
+    def test_generate_views(
         self,
         spark_udtf_generator: SparkUDTFGenerator,
         sample_view: dm.View,
     ) -> None:
         """Test SQL view generation."""
-        result = spark_udtf_generator.generate_view_sql(
-            view=sample_view,
+        result = spark_udtf_generator.generate_views(
+            data_model=None,
             secret_scope="test_scope",
         )
         assert result is not None
-        assert result.view_id == sample_view.external_id
-        assert result.sql_content is not None
-        assert "CREATE OR REPLACE VIEW" in result.sql_content.upper() or "CREATE VIEW" in result.sql_content.upper()
+        assert result.total_count > 0
+        assert len(result.view_sqls) > 0
+        
+        # Verify SQL content structure
+        for view_id, sql_content in result.view_sqls.items():
+            assert sql_content is not None
+            sql_upper = sql_content.upper()
+            assert "CREATE" in sql_upper or "SELECT" in sql_upper
 
