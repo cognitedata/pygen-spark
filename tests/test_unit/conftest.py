@@ -23,7 +23,7 @@ def sample_view() -> dm.View:
         last_updated_time=2,
         name="",
         description="",
-        properties={
+        properties={  # type: ignore[dict-item]
             "name": dm.Text(),
             "description": dm.Text(),
             "boat_guid": dm.Int64(),
@@ -74,7 +74,7 @@ def spark_multi_api_generator(
     sample_data_model: dm.DataModel[dm.View],
 ) -> SparkMultiAPIGenerator:
     """SparkMultiAPIGenerator instance for testing."""
-    return SparkMultiAPIGenerator(
+    return SparkMultiAPIGenerator(  # type: ignore[call-arg]
         top_level_package="test_package",
         client_name="TestClient",
         data_models=[sample_data_model],

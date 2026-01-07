@@ -162,7 +162,7 @@ class TimeSeriesDatapointsUDTF:
         try:
             # Initialize client if not already initialized
             if not self._client_initialized:
-                if client_id is None or client_secret is None:
+                if client_id is None or client_secret is None or tenant_id is None or cdf_cluster is None or project is None:
                     yield (None, None)
                     return
                 
@@ -172,7 +172,7 @@ class TimeSeriesDatapointsUDTF:
                     return
                 
                 try:
-                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)  # type: ignore[assignment]
+                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)  # type: ignore[assignment, arg-type]
                     self._client_initialized = True
                     self._init_error = None
                     self._init_error_category = None
@@ -203,7 +203,7 @@ class TimeSeriesDatapointsUDTF:
             
             try:
                 # Use instance_id (NodeId) for query
-                datapoints = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
+                datapoints = self.client.time_series.data.retrieve(  # type: ignore[attr-defined]
                     instance_id=NodeId(space, external_id),
                     start=start,
                     end=end,
@@ -372,7 +372,7 @@ class TimeSeriesDatapointsLongUDTF:
         try:
             # Initialize client
             if not self._client_initialized:
-                if not client_id or not client_secret:
+                if not client_id or not client_secret or not tenant_id or not cdf_cluster or not project:
                     yield (None, None, None)
                     return
                 
@@ -381,7 +381,7 @@ class TimeSeriesDatapointsLongUDTF:
                     return
                 
                 try:
-                    self.client = self._create_client(  # type: ignore[assignment]
+                    self.client = self._create_client(  # type: ignore[assignment, arg-type]
                         client_id, client_secret, tenant_id, cdf_cluster, project
                     )
                     self._client_initialized = True
@@ -419,7 +419,7 @@ class TimeSeriesDatapointsLongUDTF:
             
             try:
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
+                datapoints_list = self.client.time_series.data.retrieve(  # type: ignore[attr-defined]
                     instance_id=instance_ids,
                     start=start,
                     end=end,
@@ -588,7 +588,7 @@ class TimeSeriesLatestDatapointsUDTF:
         try:
             # Initialize client
             if not self._client_initialized:
-                if not client_id or not client_secret:
+                if not client_id or not client_secret or not tenant_id or not cdf_cluster or not project:
                     yield (None, None, None, None)
                     return
                 
@@ -597,7 +597,7 @@ class TimeSeriesLatestDatapointsUDTF:
                     return
                 
                 try:
-                    self.client = self._create_client(  # type: ignore[assignment]
+                    self.client = self._create_client(  # type: ignore[assignment, arg-type]
                         client_id, client_secret, tenant_id, cdf_cluster, project
                     )
                     self._client_initialized = True
@@ -633,7 +633,7 @@ class TimeSeriesLatestDatapointsUDTF:
             
             try:
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr]
+                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[attr-defined]
                     instance_id=instance_ids,
                     before=before,
                     include_status=include_status,

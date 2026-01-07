@@ -74,7 +74,7 @@ class SparkUDTFGenerator(SDKGenerator):
         data_models_list = (
             [loaded_data_model] if isinstance(loaded_data_model, dm.DataModel) else list(loaded_data_model)
         )
-        self.udtf_generator = SparkMultiAPIGenerator(
+        self.udtf_generator = SparkMultiAPIGenerator(  # type: ignore[call-arg]
             top_level_package=top_level_package,
             client_name=client_name,
             data_models=data_models_list,
@@ -211,7 +211,7 @@ class SparkUDTFGenerator(SDKGenerator):
         file_path = udtf_dir / f"{view.external_id}_udtf.py"
         file_path.write_text(udtf_code, encoding="utf-8")
 
-        return file_path
+        return file_path  # type: ignore[return-value]
 
     def generate_time_series_udtfs(
         self,

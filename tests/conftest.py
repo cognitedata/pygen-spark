@@ -37,7 +37,7 @@ def sample_view() -> dm.View:
         last_updated_time=2,
         name="",
         description="",
-        properties={
+        properties={  # type: ignore[dict-item]
             "name": dm.Text(),
             "description": dm.Text(),
             "boat_guid": dm.Int64(),
