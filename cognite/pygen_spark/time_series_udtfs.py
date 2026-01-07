@@ -162,7 +162,13 @@ class TimeSeriesDatapointsUDTF:
         try:
             # Initialize client if not already initialized
             if not self._client_initialized:
-                if client_id is None or client_secret is None or tenant_id is None or cdf_cluster is None or project is None:
+                if (
+                    client_id is None
+                    or client_secret is None
+                    or tenant_id is None
+                    or cdf_cluster is None
+                    or project is None
+                ):
                     yield (None, None)
                     return
                 
@@ -196,17 +202,16 @@ class TimeSeriesDatapointsUDTF:
                 yield (None, None)
                 return
             
-            if not start:
-                start = "2w-ago"  # type: ignore[assignment]  # Default to last 2 weeks
-            if not end:
-                end = "now"  # type: ignore[assignment]
+            # Set defaults for start/end if not provided
+            start_value = start if start else "2w-ago"  # Default to last 2 weeks
+            end_value = end if end else "now"
             
             try:
                 # Use instance_id (NodeId) for query
-                datapoints = self.client.time_series.data.retrieve(  # type: ignore[attr-defined]
+                datapoints = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
                     instance_id=NodeId(space, external_id),
-                    start=start,
-                    end=end,
+                    start=start_value,
+                    end=end_value,
                     aggregates=[aggregates] if aggregates else None,
                     granularity=granularity,
                 )
@@ -412,17 +417,16 @@ class TimeSeriesDatapointsLongUDTF:
             # Create NodeId list for instance_id queries
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
-            if not start:
-                start = "2w-ago"
-            if not end:
-                end = "now"
+            # Set defaults for start/end if not provided
+            start_value = start if start else "2w-ago"
+            end_value = end if end else "now"
             
             try:
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve(  # type: ignore[attr-defined]
+                datapoints_list = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
                     instance_id=instance_ids,
-                    start=start,
-                    end=end,
+                    start=start_value,
+                    end=end_value,
                     aggregates=[aggregates] if aggregates else None,
                     granularity=granularity,
                 )
@@ -628,14 +632,14 @@ class TimeSeriesLatestDatapointsUDTF:
             # Create NodeId list
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
-            if not before:
-                before = "now"
+            # Set default for before if not provided
+            before_value = before if before else "now"
             
             try:
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[attr-defined]
+                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr]
                     instance_id=instance_ids,
-                    before=before,
+                    before=before_value,
                     include_status=include_status,
                 )
                 

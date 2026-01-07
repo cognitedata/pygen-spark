@@ -49,7 +49,7 @@ class TestDataModelUdtfQueries:
     ) -> None:
         """Test UDTF query with named parameters and filter (Cell 15)."""
         # Mock CDF API response for filtered query
-        mock_cognite_client.data_modeling.instances.list.return_value = [
+        mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(
                 external_id="boat1",
                 properties={"name": "XBOX", "description": "Test boat"},
@@ -134,7 +134,7 @@ class TestFilteringQueries:
     ) -> None:
         """Test filtering by external_id (Cell 20)."""
         # Mock CDF API response
-        mock_cognite_client.data_modeling.instances.list.return_value = [
+        mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat::257038990", properties={"name": "Test"})
         ]
         
@@ -154,7 +154,7 @@ class TestFilteringQueries:
     ) -> None:
         """Test filtering by property (Cell 21)."""
         # Mock CDF API response for name filter
-        mock_cognite_client.data_modeling.instances.list.return_value = [
+        mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat1", properties={"name": "XBOX"})
         ]
         
@@ -173,7 +173,7 @@ class TestFilteringQueries:
     ) -> None:
         """Test filtering by space and external_id (Cell 22)."""
         # Mock CDF API response
-        mock_cognite_client.data_modeling.instances.list.return_value = [
+        mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat::257038990", properties={})
         ]
         
@@ -192,7 +192,7 @@ class TestFilteringQueries:
     ) -> None:
         """Test filtering by numeric range (Cell 23)."""
         # Mock CDF API response
-        mock_cognite_client.data_modeling.instances.list.return_value = [
+        mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat1", properties={"boat_guid": 257038500})
         ]
         
@@ -211,7 +211,7 @@ class TestFilteringQueries:
     ) -> None:
         """Test complex filtering with multiple conditions (Cell 24)."""
         # Mock CDF API response
-        mock_cognite_client.data_modeling.instances.list.return_value = [
+        mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(
                 external_id="boat1",
                 properties={
