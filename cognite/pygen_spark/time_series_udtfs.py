@@ -33,9 +33,9 @@ except ImportError as import_error:
     COGNITE_AVAILABLE = False
     IMPORT_ERROR = str(import_error)
     # Create dummy classes to prevent syntax errors if imports fail
-    class CogniteClient:
+    class CogniteClient:  # type: ignore[no-redef]
         pass
-    class NodeId:
+    class NodeId:  # type: ignore[no-redef]
         def __init__(self, space: str, external_id: str):
             self.space = space
             self.external_id = external_id
@@ -163,7 +163,6 @@ class TimeSeriesDatapointsUDTF:
             # Initialize client if not already initialized
             if not self._client_initialized:
                 if client_id is None or client_secret is None:
-                    error_msg = "Missing credentials: client_id and client_secret are required."
                     yield (None, None)
                     return
                 
@@ -173,7 +172,7 @@ class TimeSeriesDatapointsUDTF:
                     return
                 
                 try:
-                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)
+                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)  # type: ignore[assignment]
                     self._client_initialized = True
                     self._init_error = None
                     self._init_error_category = None
@@ -198,13 +197,13 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             if not start:
-                start = "2w-ago"  # Default to last 2 weeks
+                start = "2w-ago"  # type: ignore[assignment]  # Default to last 2 weeks
             if not end:
-                end = "now"
+                end = "now"  # type: ignore[assignment]
             
             try:
                 # Use instance_id (NodeId) for query
-                datapoints = self.client.time_series.data.retrieve(
+                datapoints = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
                     instance_id=NodeId(space, external_id),
                     start=start,
                     end=end,
@@ -382,7 +381,7 @@ class TimeSeriesDatapointsLongUDTF:
                     return
                 
                 try:
-                    self.client = self._create_client(
+                    self.client = self._create_client(  # type: ignore[assignment]
                         client_id, client_secret, tenant_id, cdf_cluster, project
                     )
                     self._client_initialized = True
@@ -420,7 +419,7 @@ class TimeSeriesDatapointsLongUDTF:
             
             try:
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve(
+                datapoints_list = self.client.time_series.data.retrieve(  # type: ignore[union-attr]
                     instance_id=instance_ids,
                     start=start,
                     end=end,
@@ -598,7 +597,7 @@ class TimeSeriesLatestDatapointsUDTF:
                     return
                 
                 try:
-                    self.client = self._create_client(
+                    self.client = self._create_client(  # type: ignore[assignment]
                         client_id, client_secret, tenant_id, cdf_cluster, project
                     )
                     self._client_initialized = True
@@ -634,7 +633,7 @@ class TimeSeriesLatestDatapointsUDTF:
             
             try:
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve_latest(
+                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr]
                     instance_id=instance_ids,
                     before=before,
                     include_status=include_status,
