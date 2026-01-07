@@ -203,8 +203,8 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             # Set defaults for start/end if not provided
-            start_value: str = start or "2w-ago"  # Default to last 2 weeks
-            end_value: str = end or "now"
+            start_value: str = start or "2w-ago"  # type: ignore[assignment]  # Default to last 2 weeks
+            end_value: str = end or "now"  # type: ignore[assignment]
             
             try:
                 # Ensure client is initialized
