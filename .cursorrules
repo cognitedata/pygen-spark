@@ -360,5 +360,208 @@ class UDTFResult(BaseModel):
 
 ---
 
+## Testing & Quality Guardrails
+
+### Pre-commit Hooks (REQUIRED)
+- All code must pass pre-commit hooks before committing
+- Hooks include: `uv-lock`, `ruff` (lint + format), `mypy`
+- Run `uv run pre-commit run --all-files` before pushing
+- Pre-commit config: `.pre-commit-config.yaml`
+
+### Linting & Formatting (Ruff)
+- **Line length**: 120 characters maximum
+- **Target version**: Python 3.10+
+- **Enabled rules**: `E`, `W`, `F`, `I`, `RUF`, `TID`, `UP`, `B`, `FLY`, `PTH`, `ERA`
+- **Ignored rules**: `UP007` (X | Y annotations), `B008` (function calls in defaults), `RUF009` (function calls in defaults), `W293` (whitespace in docstrings)
+- **Import sorting**: Use `isort` via ruff, known-third-party includes `cognite.client`
+- Run `ruff check --fix` and `ruff format` before committing
+
+### Type Checking (Mypy)
+- **Configuration**: `explicit_package_bases = true`, `plugins = ["pydantic.mypy"]`
+- **Strictness**: Aligned with pygen-main (lenient, not overly strict)
+- **Pydantic plugin**: Required for proper Pydantic model type checking
+- All functions must have type hints (enforced by mypy)
+- Use `# type: ignore[...]` sparingly and only with specific error codes
+- Common ignore patterns:
+  - `# type: ignore[import-untyped]` - for untyped third-party imports
+  - `# type: ignore[call-arg]` - for SDK compatibility issues
+  - `# type: ignore[dict-item]` - for test fixture dictionaries
+  - `# type: ignore[attr-defined]` - for mock objects
+
+### Testing Requirements
+
+#### Test Structure
+- **Unit tests**: `tests/test_unit/` - Fast, isolated tests with mocks
+- **Integration tests**: `tests/test_integration/` - Tests that require external services
+- **Test utilities**: `tests/utils.py` - Shared test helpers
+- **Fixtures**: `tests/conftest.py` - Shared pytest fixtures
+- **Test files**: Must follow `test_*.py` naming convention
+
+#### Test Coverage
+- **Minimum threshold**: 45% (configured in `.coveragerc` and GitHub Actions)
+- **Exclusions**: Templates, `__init__.py`, test files themselves
+- Coverage report generated in CI and posted to PRs
+- Use `.coveragerc` for coverage configuration (not `pyproject.toml`)
+
+#### Writing Tests
+- Use pytest fixtures from `conftest.py` (e.g., `mock_cognite_client`, `sample_view`)
+- Follow AAA pattern: Arrange, Act, Assert
+- Use descriptive test names: `test_function_name_scenario_expected_result`
+- Test both success and failure cases
+- Use `pytest.mark.parametrize` for testing multiple scenarios
+- Mock external dependencies (CogniteClient, file I/O, etc.)
+
+```python
+# ✅ Good - Comprehensive test
+def test_generate_udtfs_creates_files(mock_cognite_client, temp_output_dir, sample_view):
+    """Test that generate_udtfs creates expected files."""
+    # Arrange
+    generator = SparkUDTFGenerator(client=mock_cognite_client, output_dir=temp_output_dir)
+    
+    # Act
+    result = generator.generate_udtfs([sample_view])
+    
+    # Assert
+    assert len(result.generated_files) == 1
+    assert result.get_file(sample_view.external_id).exists()
+    assert result.get_file(sample_view.external_id).suffix == ".py"
+
+# ❌ Bad - Missing assertions, no clear structure
+def test_generate():
+    generator = SparkUDTFGenerator()
+    result = generator.generate_udtfs([view])
+    # No assertions!
+```
+
+#### Test Fixtures
+- Use Pydantic models for test data when possible
+- Include all required fields for SDK objects (View, DataModel, etc.)
+- Use `# type: ignore[dict-item]` for test fixture dictionaries when needed
+- Mock CogniteClient using `pytest-mock` or custom fixtures
+
+```python
+# ✅ Good - Complete fixture with all required fields
+@pytest.fixture
+def sample_view() -> dm.View:
+    """Create a sample view for testing."""
+    return dm.View(
+        space="test_space",
+        external_id="TestView",
+        version="1",
+        created_time=int(datetime.now(timezone.utc).timestamp() * 1000),
+        last_updated_time=int(datetime.now(timezone.utc).timestamp() * 1000),
+        name="Test View",
+        description="Test description",
+        filter=None,
+        implements=[],
+        writable=True,
+        used_for="node",
+        is_global=False,
+        properties={
+            "name": dm.MappedProperty(
+                type=dm.Text(),
+                nullable=True,
+                container=dm.ContainerId("test_space", "TestContainer", "1"),
+                container_property_identifier="name",
+                immutable=False,
+                auto_increment=False,
+            )
+        },
+    )
+```
+
+### CI/CD Pipeline (GitHub Actions)
+
+#### Build Workflow (`.github/workflows/build.yml`)
+- **Triggers**: Pull requests
+- **Jobs**:
+  1. **lint**: Pre-commit hooks (ruff, mypy, uv-lock)
+  2. **tests**: Multi-version testing (Python 3.10, 3.12)
+  3. **coverage**: Coverage report with 45% threshold
+  4. **build**: Package building verification
+
+#### Release Workflow (`.github/workflows/release.yaml`)
+- **Triggers**: Push to `main` branch
+- **Jobs**:
+  1. **lint**: Pre-commit checks
+  2. **release**: Version bumping, changelog, PyPI upload, GitHub release
+- **Requires**: `CD` environment with `PYPI_API_TOKEN` secret
+
+### Code Quality Checklist
+
+Before submitting code, ensure:
+- [ ] All pre-commit hooks pass (`uv run pre-commit run --all-files`)
+- [ ] Ruff linting passes (`ruff check`)
+- [ ] Ruff formatting applied (`ruff format`)
+- [ ] Mypy type checking passes (`mypy cognite/ tests/`)
+- [ ] All tests pass (`pytest`)
+- [ ] Test coverage meets threshold (45%)
+- [ ] New code has corresponding tests
+- [ ] Test fixtures are complete and properly typed
+- [ ] No `# type: ignore` without specific error code
+- [ ] CI pipeline passes (lint, tests, coverage, build)
+
+### Running Tests Locally
+
+```bash
+# Run all tests
+uv run pytest
+
+# Run unit tests only
+uv run pytest tests/test_unit
+
+# Run with coverage
+uv run pytest --cov=cognite/ --cov-report=html
+
+# Run specific test file
+uv run pytest tests/test_unit/test_generator.py
+
+# Run with verbose output
+uv run pytest -v
+
+# Run pre-commit hooks
+uv run pre-commit run --all-files
+```
+
+### Test File Organization
+
+```
+tests/
+├── conftest.py              # Root-level fixtures
+├── utils.py                 # Test utilities
+├── test_udtf_generation.py  # Legacy/placeholder tests
+├── test_unit/               # Unit tests
+│   ├── conftest.py          # Unit test fixtures
+│   ├── test_fields.py
+│   ├── test_generator.py
+│   ├── test_templates.py
+│   ├── test_type_converter.py
+│   └── test_utils.py
+└── test_integration/        # Integration tests
+    ├── conftest.py          # Integration test fixtures
+    └── test_udtf_queries.py
+```
+
+### Doctest Requirements
+- Doctests run automatically via `--doctest-modules` in pytest
+- Use `# doctest: +SKIP` on same line as example for file-dependent examples
+- Don't include inline comments in expected output (doctest doesn't support them)
+- Keep doctest examples simple and focused
+
+```python
+# ✅ Good - Skipped doctest
+>>> config = CDFConnectionConfig.from_toml("config.toml")  # doctest: +SKIP
+
+# ✅ Good - Simple doctest
+>>> to_udtf_function_name("SmallBoat")
+'small_boat_udtf'
+
+# ❌ Bad - Inline comment in expected output
+>>> to_udtf_function_name("small_boat_udtf")
+'small_boat_udtf'  # Already in correct format
+```
+
+---
+
 **Remember**: Code should be indistinguishable from pygen-main - same developer, same patterns, same quality.
 
