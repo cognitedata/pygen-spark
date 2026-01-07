@@ -220,6 +220,12 @@ class TimeSeriesDatapointsUDTF:
                     granularity=granularity,
                 )
                 
+                # If the client returned None (e.g. time series not found), treat as no datapoints
+                if datapoints is None:
+                    sys.stderr.write("[UDTF] ⚠ No datapoints returned by client, yielding empty row\n")
+                    yield (None, None)
+                    return
+                
                 # Yield datapoints (no space/external_id needed - all from same instance)
                 if aggregates:
                     # For aggregates, access by aggregate name (e.g., .average, .max)
