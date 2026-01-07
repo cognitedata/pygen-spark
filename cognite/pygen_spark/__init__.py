@@ -36,4 +36,4 @@ __all__ = [
     "to_udtf_function_name",
 ]
 
-__version__ = "0.1.0"
+from cognite.pygen_spark._version import __version__
