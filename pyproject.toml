@@ -39,6 +39,7 @@ dev = [
     "ruff>=0.1.0",
     "mypy>=1.5.0",
     "pre-commit>=4.0.0",
+    "pandas>=1.5.3",  # Required by cognite-pygen._build
 ]
 
 [project.urls]
