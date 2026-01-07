@@ -100,12 +100,12 @@ class TimeSeriesDatapointsUDTF:
         
         Client initialization happens in eval() for all registration modes.
         """
-        # Initialize instance variables
-        self.client = None
-        self._client_initialized = False
-        self._init_error = None
-        self._init_error_category = None
-        self._init_success = True
+        # Initialize instance variables with explicit type annotations
+        self.client: CogniteClient | None = None
+        self._client_initialized: bool = False
+        self._init_error: str | None = None
+        self._init_error_category: str | None = None
+        self._init_success: bool = True
     
     def _create_client(
         self,
