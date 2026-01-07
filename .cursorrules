@@ -4,7 +4,7 @@
 
 1. **Use Pydantic to the highest degree possible**: Prefer Pydantic `BaseModel` over dictionaries, dataclasses, or untyped data structures
 2. **Use PySpark when possible**: PySpark DataTypes are the source of truth for all type conversions
-3. **Follow pygen-main style**: Code should look like it was written by the same developer as pygen-main
+3. **Follow pygen-main style**: Code should look like it was written by the same developer as [pygen-main](https://github.com/cognitedata/pygen)
 
 ## Type Safety & Data Structures
 
@@ -97,7 +97,7 @@ schema = StructType([
 schema = "TABLE(name STRING, count INT)"
 ```
 
-## Code Style (pygen-main alignment)
+## Code Style ([pygen-main](https://github.com/cognitedata/pygen) alignment)
 
 ### Imports
 - Group: standard library, third-party, local application
@@ -251,7 +251,7 @@ class SparkUDTFGenerator:
 - Never duplicate conversion logic
 
 ### Pydantic Configuration Models
-- Use Pydantic models for configuration (similar to pygen-main's `PygenConfig`)
+- Use Pydantic models for configuration (similar to [pygen-main](https://github.com/cognitedata/pygen)'s `PygenConfig`)
 - Use global registry instances for shared configuration (like `time_series_udtf_registry`)
 
 ```python
@@ -299,7 +299,7 @@ When reviewing or writing code, ensure:
 - [ ] Imports are grouped and sorted correctly
 - [ ] Docstrings follow the concise format
 - [ ] Error handling uses specific exceptions
-- [ ] Code follows pygen-main patterns and style
+- [ ] Code follows [pygen-main](https://github.com/cognitedata/pygen) patterns and style
 - [ ] No `dict[str, Any]` or untyped structures
 - [ ] No duplicate type conversion logic
 - [ ] All UDTF types follow the same patterns (client initialization, error handling, template-based generation)
@@ -378,7 +378,7 @@ class UDTFResult(BaseModel):
 
 ### Type Checking (Mypy)
 - **Configuration**: `explicit_package_bases = true`, `plugins = ["pydantic.mypy"]`
-- **Strictness**: Aligned with pygen-main (lenient, not overly strict)
+- **Strictness**: Aligned with [pygen-main](https://github.com/cognitedata/pygen) (lenient, not overly strict)
 - **Pydantic plugin**: Required for proper Pydantic model type checking
 - All functions must have type hints (enforced by mypy)
 - Use `# type: ignore[...]` sparingly and only with specific error codes
@@ -563,5 +563,5 @@ tests/
 
 ---
 
-**Remember**: Code should be indistinguishable from pygen-main - same developer, same patterns, same quality.
+**Remember**: Code should be indistinguishable from [pygen-main](https://github.com/cognitedata/pygen) - same developer, same patterns, same quality.
 
