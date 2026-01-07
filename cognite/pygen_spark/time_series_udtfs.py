@@ -641,7 +641,7 @@ class TimeSeriesLatestDatapointsUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set default for before if not provided
-            before_value: str = before or "now"
+            before_value: str = before or "now"  # type: ignore[assignment]
             
             try:
                 # Ensure client is initialized
