@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 from cognite.client import data_modeling as dm
 
 from cognite.pygen_spark.udtf_generator import SparkMultiAPIGenerator
@@ -51,4 +50,3 @@ class TestTemplateRendering:
         assert len(sql) > 0
         # Check for SQL keywords
         assert "SELECT" in sql.upper() or "CREATE" in sql.upper()
-

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from unittest.mock import MagicMock, call
+from unittest.mock import MagicMock
 
 import pytest
 from cognite.client import data_modeling as dm
@@ -11,7 +11,7 @@ from cognite.client import data_modeling as dm
 from cognite.pygen_spark import SparkUDTFGenerator
 
 if TYPE_CHECKING:
-    from cognite.client import CogniteClient
+    pass
 
 
 @pytest.mark.integration
@@ -28,12 +28,12 @@ class TestDataModelUdtfQueries:
         # Generate UDTF
         result = spark_udtf_generator.generate_udtfs()
         assert result.total_count > 0
-        
+
         # Verify UDTF file was created
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
         assert udtf_file.exists()
-        
+
         # Verify UDTF code contains expected structure
         code = udtf_file.read_text()
         assert "class" in code
@@ -55,12 +55,12 @@ class TestDataModelUdtfQueries:
                 properties={"name": "XBOX", "description": "Test boat"},
             )
         ]
-        
+
         # Generate UDTF
         result = spark_udtf_generator.generate_udtfs()
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
-        
+
         # Verify filter parameter handling in generated code
         code = udtf_file.read_text()
         assert "name" in code.lower()
@@ -98,7 +98,7 @@ class TestTimeSeriesUdtfQueries:
             "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.courseOverGroundTrue"
         )
         node_ids = parse_instance_ids(instance_ids_str)
-        
+
         assert len(node_ids) == 2
         assert node_ids[0].space == "sailboat"
         assert node_ids[1].space == "sailboat"
@@ -118,7 +118,7 @@ class TestTimeSeriesUdtfQueries:
             "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.courseOverGroundTrue"
         )
         node_ids = parse_instance_ids(instance_ids_str)
-        
+
         assert len(node_ids) == 2
         # Verify parsing handles multiple time series from same space
 
@@ -137,12 +137,12 @@ class TestFilteringQueries:
         mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat::257038990", properties={"name": "Test"})
         ]
-        
+
         # Generate UDTF
         result = spark_udtf_generator.generate_udtfs()
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
-        
+
         # Verify filter handling in code
         # Should handle WHERE clause filtering (this would be in Spark SQL, not Python code)
         # But we can verify the UDTF structure supports it
@@ -157,11 +157,11 @@ class TestFilteringQueries:
         mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat1", properties={"name": "XBOX"})
         ]
-        
+
         result = spark_udtf_generator.generate_udtfs()
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
-        
+
         code = udtf_file.read_text()
         # Verify filter parameter exists
         assert "name" in code.lower()
@@ -176,11 +176,11 @@ class TestFilteringQueries:
         mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat::257038990", properties={})
         ]
-        
+
         result = spark_udtf_generator.generate_udtfs()
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
-        
+
         # Verify space handling in generated code
         code = udtf_file.read_text()
         assert "space" in code.lower() or "sailboat" in code.lower()
@@ -195,11 +195,11 @@ class TestFilteringQueries:
         mock_cognite_client.data_modeling.instances.list.return_value = [  # type: ignore[attr-defined]
             MagicMock(external_id="boat1", properties={"boat_guid": 257038500})
         ]
-        
+
         result = spark_udtf_generator.generate_udtfs()
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
-        
+
         code = udtf_file.read_text()
         # Verify numeric property handling
         assert "boat_guid" in code.lower() or "boatGuid" in code.lower()
@@ -220,11 +220,11 @@ class TestFilteringQueries:
                 },
             )
         ]
-        
+
         result = spark_udtf_generator.generate_udtfs()
         udtf_file = result.get_file("SmallBoat")
         assert udtf_file is not None
-        
+
         code = udtf_file.read_text()
         # Verify multiple property handling
         assert "mmsi_country" in code.lower() or "mmsiCountry" in code.lower()
@@ -244,23 +244,22 @@ class TestJoinQueries:
         """Test JOIN between small_boat_udtf and nmea_time_series_udtf (Cell 25)."""
         # Generate both UDTFs
         result = spark_udtf_generator.generate_udtfs()
-        
+
         small_boat_file = result.get_file("SmallBoat")
         nmea_file = result.get_file("NmeaTimeSeries")
-        
+
         assert small_boat_file is not None
         assert nmea_file is not None
-        
+
         # Verify both UDTFs have compatible output schemas for joining
         small_boat_code = small_boat_file.read_text()
         nmea_code = nmea_file.read_text()
-        
+
         # Both should have space and external_id columns for joining
         assert "space" in small_boat_code.lower() or "external_id" in small_boat_code.lower()
         assert "space" in nmea_code.lower() or "external_id" in nmea_code.lower()
-        
+
         # Verify mmsi property exists in nmea UDTF for join condition
         assert "mmsi" in nmea_code.lower()
         # Verify boat_guid exists in small_boat UDTF for join condition
         assert "boat_guid" in small_boat_code.lower() or "boatGuid" in small_boat_code.lower()
-

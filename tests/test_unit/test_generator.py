@@ -5,13 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-import pytest
 from cognite.client import data_modeling as dm
 
 from cognite.pygen_spark import SparkUDTFGenerator
 
 if TYPE_CHECKING:
-    from cognite.client import CogniteClient
+    pass
 
 
 class TestSparkUDTFGenerator:
@@ -67,10 +66,9 @@ class TestSparkUDTFGenerator:
         assert result is not None
         assert result.total_count > 0
         assert len(result.view_sqls) > 0
-        
+
         # Verify SQL content structure
         for _view_id, sql_content in result.view_sqls.items():
             assert sql_content is not None
             sql_upper = sql_content.upper()
             assert "CREATE" in sql_upper or "SELECT" in sql_upper
-

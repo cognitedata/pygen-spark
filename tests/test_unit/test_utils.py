@@ -120,4 +120,3 @@ class TestToUdtfFunctionName:
     def test_all_caps(self) -> None:
         """Test all caps conversion."""
         assert to_udtf_function_name("HTTPResponse") == "http_response_udtf"
-

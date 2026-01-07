@@ -80,4 +80,3 @@ def spark_udtf_generator(
         output_dir=temp_output_dir,
         data_model=sample_data_model,
     )
-

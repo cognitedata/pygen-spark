@@ -80,4 +80,3 @@ def spark_multi_api_generator(
         data_models=[sample_data_model],  # type: ignore[arg-type]
         default_instance_space="test_space",  # type: ignore[arg-type]
     )
-

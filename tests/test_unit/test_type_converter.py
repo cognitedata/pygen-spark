@@ -77,6 +77,7 @@ class TestCdfToSpark:
 
     def test_unknown_type_defaults_to_string(self) -> None:
         """Test unknown type defaults to StringType."""
+
         # Use a mock object that's not a known type
         class UnknownType:
             pass
@@ -137,4 +138,3 @@ class TestSparkToTypeJson:
         result = TypeConverter.spark_to_type_json(ArrayType(StringType()), "field_name", nullable=True)
         assert isinstance(result, str)
         assert "field_name" in result
-

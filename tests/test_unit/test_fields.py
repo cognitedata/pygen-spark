@@ -107,4 +107,3 @@ class TestUDTFField:
         field = UDTFField.from_property("related_id", prop)
         assert field is not None
         assert "String" in field.spark_type
-
