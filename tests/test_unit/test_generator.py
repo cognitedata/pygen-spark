@@ -65,7 +65,7 @@ class TestSparkUDTFGenerator:
         assert len(result.view_sqls) > 0
         
         # Verify SQL content structure
-        for view_id, sql_content in result.view_sqls.items():
+        for _view_id, sql_content in result.view_sqls.items():
             assert sql_content is not None
             sql_upper = sql_content.upper()
             assert "CREATE" in sql_upper or "SELECT" in sql_upper

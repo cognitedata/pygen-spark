@@ -44,7 +44,7 @@ def test_generate_views(
     assert len(result.view_sqls) > 0
     
     # Verify SQL content structure
-    for view_id, sql_content in result.view_sqls.items():
+    for _view_id, sql_content in result.view_sqls.items():
         assert sql_content is not None
         assert len(sql_content) > 0
         sql_upper = sql_content.upper()

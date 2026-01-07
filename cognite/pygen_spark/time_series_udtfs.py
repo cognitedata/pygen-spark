@@ -70,7 +70,7 @@ class TimeSeriesDatapointsUDTF:
         tenant_id: str | None = None,
         cdf_cluster: str | None = None,
         project: str | None = None,
-    ):
+    ) -> object:
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
         This method is used by PySpark Connect to validate arguments and determine output schema.
@@ -189,7 +189,6 @@ class TimeSeriesDatapointsUDTF:
             
             # Check if initialization succeeded
             if not hasattr(self, '_init_success') or not self._init_success or self._init_error is not None:
-                error_msg = getattr(self, '_init_error', 'Unknown initialization error')
                 yield (None, None)
                 return
             
@@ -223,7 +222,11 @@ class TimeSeriesDatapointsUDTF:
                         timestamps = datapoints.timestamp
                         for ts_ms, val in zip(timestamps, values):
                             # Convert milliseconds timestamp to datetime for PySpark TimestampType
-                            timestamp_dt = datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc) if ts_ms is not None else None
+                            timestamp_dt = (
+                                datetime.fromtimestamp(ts_ms / 1000.0, tz=timezone.utc)
+                                if ts_ms is not None
+                                else None
+                            )
                             yield (timestamp_dt, val)
                     else:
                         sys.stderr.write(f"ERROR: Aggregate '{aggregates}' not found in response\n")
@@ -232,13 +235,19 @@ class TimeSeriesDatapointsUDTF:
                     # For raw datapoints, use .value
                     for dp in datapoints:
                         # Convert milliseconds timestamp to datetime for PySpark TimestampType
-                        timestamp_dt = datetime.fromtimestamp(dp.timestamp / 1000.0, tz=timezone.utc) if dp.timestamp is not None else None
+                        timestamp_dt = (
+                            datetime.fromtimestamp(dp.timestamp / 1000.0, tz=timezone.utc)
+                            if dp.timestamp is not None
+                            else None
+                        )
                         yield (timestamp_dt, dp.value)
                     
                     # If no rows were found, yield at least one row with None values
                     # This prevents "end-of-input" error when the time series is empty
                     if len(datapoints) == 0:
-                        sys.stderr.write("[UDTF] ⚠ No datapoints found, yielding empty row to prevent 'end-of-input' error\n")
+                        sys.stderr.write(
+                            "[UDTF] ⚠ No datapoints found, yielding empty row to prevent 'end-of-input' error\n"
+                        )
                         yield (None, None)
                         
             except Exception as e:
@@ -287,7 +296,7 @@ class TimeSeriesDatapointsLongUDTF:
         tenant_id: str | None = None,
         cdf_cluster: str | None = None,
         project: str | None = None,
-    ):
+    ) -> object:
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
         Args:
@@ -302,10 +311,10 @@ class TimeSeriesDatapointsLongUDTF:
     
     def __init__(self) -> None:
         """Initialize UDTF (parameter-free for all registration modes)."""
-        self.client = None
+        self.client: CogniteClient | None = None
         self._client_initialized = False
-        self._init_error = None
-        self._init_error_category = None
+        self._init_error: str | None = None
+        self._init_error_category: str | None = None
         self._init_success = True
     
     def _create_client(
@@ -349,7 +358,7 @@ class TimeSeriesDatapointsLongUDTF:
             end: End timestamp (ISO 8601 or "now")
             aggregates: Optional aggregate type (e.g., "average", "max", "min")
             granularity: Optional granularity for aggregates (e.g., "1h", "30d")
-            include_aggregate_name: Whether to include aggregate name in time_series_external_id (for compatibility with retrieve_dataframe)
+            include_aggregate_name: Whether to include aggregate name in time_series_external_id
             client_id: OAuth2 client ID
             client_secret: OAuth2 client secret
             tenant_id: Azure AD tenant ID
@@ -451,13 +460,19 @@ class TimeSeriesDatapointsLongUDTF:
                         # For raw datapoints
                         for dp in dps:
                             # Convert milliseconds timestamp to datetime for PySpark TimestampType
-                            timestamp_dt = datetime.fromtimestamp(dp.timestamp / 1000.0, tz=timezone.utc) if dp.timestamp is not None else None
+                            timestamp_dt = (
+                                datetime.fromtimestamp(dp.timestamp / 1000.0, tz=timezone.utc)
+                                if dp.timestamp is not None
+                                else None
+                            )
                             yield (timestamp_dt, ts_external_id, dp.value)
                             row_count += 1
                 
                 # If no rows were found, yield at least one row with None values
                 if row_count == 0:
-                    sys.stderr.write("[UDTF] ⚠ No datapoints found, yielding empty row to prevent 'end-of-input' error\n")
+                    sys.stderr.write(
+                        "[UDTF] ⚠ No datapoints found, yielding empty row to prevent 'end-of-input' error\n"
+                    )
                     yield (None, None, None)
                         
             except Exception as e:
@@ -499,7 +514,7 @@ class TimeSeriesLatestDatapointsUDTF:
         tenant_id: str | None = None,
         cdf_cluster: str | None = None,
         project: str | None = None,
-    ):
+    ) -> object:
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
         Args:
@@ -514,10 +529,10 @@ class TimeSeriesLatestDatapointsUDTF:
     
     def __init__(self) -> None:
         """Initialize UDTF (parameter-free for all registration modes)."""
-        self.client = None
+        self.client: CogniteClient | None = None
         self._client_initialized = False
-        self._init_error = None
-        self._init_error_category = None
+        self._init_error: str | None = None
+        self._init_error_category: str | None = None
         self._init_success = True
     
     def _create_client(
@@ -639,7 +654,11 @@ class TimeSeriesLatestDatapointsUDTF:
                     if len(dps) > 0:
                         latest_dp = dps[0]
                         # Convert milliseconds timestamp to datetime for PySpark TimestampType
-                        timestamp_dt = datetime.fromtimestamp(latest_dp.timestamp / 1000.0, tz=timezone.utc) if latest_dp.timestamp is not None else None
+                        timestamp_dt = (
+                            datetime.fromtimestamp(latest_dp.timestamp / 1000.0, tz=timezone.utc)
+                            if latest_dp.timestamp is not None
+                            else None
+                        )
                         yield (
                             ts_external_id,
                             timestamp_dt,
@@ -650,7 +669,9 @@ class TimeSeriesLatestDatapointsUDTF:
                 
                 # If no rows were found, yield at least one row with None values
                 if row_count == 0:
-                    sys.stderr.write("[UDTF] ⚠ No latest datapoints found, yielding empty row to prevent 'end-of-input' error\n")
+                    sys.stderr.write(
+                        "[UDTF] ⚠ No latest datapoints found, yielding empty row to prevent 'end-of-input' error\n"
+                    )
                     yield (None, None, None, None)
                         
             except Exception as e:

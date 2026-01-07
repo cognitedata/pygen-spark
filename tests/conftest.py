@@ -71,7 +71,7 @@ def spark_udtf_generator(
     mock_cognite_client: CogniteClient,
     temp_output_dir: Path,
     sample_data_model: dm.DataModel[dm.View],
-) -> "SparkUDTFGenerator":
+) -> object:
     """SparkUDTFGenerator instance for testing."""
     from cognite.pygen_spark import SparkUDTFGenerator
 

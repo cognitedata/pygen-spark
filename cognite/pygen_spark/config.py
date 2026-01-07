@@ -180,13 +180,13 @@ class CDFConnectionConfig(BaseModel):
         try:
             import tomli
             
-            with open(toml_path, "rb") as f:
+            with toml_path.open("rb") as f:
                 toml_content = tomli.load(f)
         except ImportError:
             try:
-                import tomllib
+                import tomllib  # type: ignore[import-untyped]
                 
-                with open(toml_path, "rb") as f:
+                with toml_path.open("rb") as f:
                     toml_content = tomllib.load(f)
             except ImportError:
                 raise ImportError(

@@ -15,16 +15,7 @@ from cognite.client.data_classes.data_modeling.views import (
 )
 
 try:
-    from pyspark.sql.types import (
-        ArrayType,
-        BooleanType,
-        DataType,
-        DateType,
-        DoubleType,
-        LongType,
-        StringType,
-        TimestampType,
-    )
+    from pyspark.sql.types import DataType
 except ImportError:
     # PySpark may not be available in all environments
     DataType = object  # type: ignore[assignment, misc]

@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 # Define DataModel type alias (same as pygen)
 # Short-term: We define our own type alias using public types from cognite.client
 # This avoids depending on pygen's private API (_generator module)
-# Long-term: Once pygen is updated to export all dependencies in __init__.py, we can use:
-#   from cognite.pygen import SDKGenerator, MultiAPIGenerator, DataModel
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 DataModel = DataModelIdentifier | dm.DataModel[dm.View]
 
@@ -145,7 +143,13 @@ class SparkUDTFGenerator(SDKGenerator):
             total_count=len(generated_files),
         )
 
-    def generate_views(self, data_model: DataModel | None = None, secret_scope: str = "", catalog: str | None = None, schema: str | None = None) -> ViewSQLGenerationResult:
+    def generate_views(
+        self,
+        data_model: DataModel | None = None,
+        secret_scope: str = "",
+        catalog: str | None = None,
+        schema: str | None = None,
+    ) -> ViewSQLGenerationResult:
         """Generate SQL View definitions with Secret injection.
 
         Args:

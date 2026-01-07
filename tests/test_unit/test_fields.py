@@ -8,7 +8,7 @@ from cognite.client import data_modeling as dm
 from cognite.pygen_spark.fields import UDTFField
 
 try:
-    from pyspark.sql.types import StringType
+    from pyspark.sql.types import DataType  # noqa: F401
 except ImportError:
     pytest.skip("PySpark not available", allow_module_level=True)
 

@@ -51,11 +51,11 @@ class TypeConverter:
         from cognite.client import data_modeling as dm
         
         # Map CDF property types to PySpark types
-        if isinstance(property_type, (dm.Int32, dm.Int64)):
+        if isinstance(property_type, dm.Int32 | dm.Int64):
             base_type = LongType()
         elif isinstance(property_type, dm.Boolean):
             base_type = BooleanType()
-        elif isinstance(property_type, (dm.Float32, dm.Float64)):
+        elif isinstance(property_type, dm.Float32 | dm.Float64):
             base_type = DoubleType()
         elif isinstance(property_type, dm.Date):
             base_type = DateType()
@@ -155,13 +155,13 @@ class TypeConverter:
         Returns:
             PySpark DataType object
         """
-        if python_type == str:
+        if python_type is str:
             return StringType()
-        elif python_type == int:
+        elif python_type is int:
             return LongType()
-        elif python_type == float:
+        elif python_type is float:
             return DoubleType()
-        elif python_type == bool:
+        elif python_type is bool:
             return BooleanType()
         else:
             # Default to STRING for unknown types

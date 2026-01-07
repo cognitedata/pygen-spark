@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -69,5 +70,14 @@ def create_mock_view(
         external_id=external_id,
         version=version,
         properties=properties,
+        created_time=datetime.now(timezone.utc),
+        last_updated_time=datetime.now(timezone.utc),
+        name=external_id,
+        description="",
+        filter=None,
+        implements=[],
+        writable=False,
+        used_for="node",
+        is_global=False,
     )
 

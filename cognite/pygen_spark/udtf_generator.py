@@ -10,8 +10,6 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 # Short-term: Import from private API (required until pygen exports this)
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import MultiAPIGenerator
-# Long-term: Once pygen is updated to export all dependencies in __init__.py, we can use:
-#   from cognite.pygen import MultiAPIGenerator
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 
 # Import relationship types directly from views module (matching pygen-main's approach)
@@ -96,7 +94,9 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         
         return code
 
-    def generate_view_sql(self, view: View, secret_scope: str, catalog: str | None = None, schema: str | None = None) -> str:
+    def generate_view_sql(
+        self, view: View, secret_scope: str, catalog: str | None = None, schema: str | None = None
+    ) -> str:
         """Generate SQL CREATE VIEW statement with Secret injection.
 
         Args:

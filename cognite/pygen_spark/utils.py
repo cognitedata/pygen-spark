@@ -6,9 +6,7 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field, field_validator
 
-# Short-term: Import from private API (same pattern as pygen-spark)
-# Long-term: If pygen exports this in __init__.py, we can use:
-#   from cognite.pygen import to_snake
+# Import from private API (same pattern as pygen-spark)
 from cognite.pygen.utils.text import to_snake
 
 if TYPE_CHECKING:

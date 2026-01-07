@@ -89,7 +89,10 @@ class TestTimeSeriesUdtfQueries:
         # This tests the time_series_datapoints_long_udtf template
         from cognite.pygen_spark.utils import parse_instance_ids
 
-        instance_ids_str = "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.speedOverGround,sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.courseOverGroundTrue"
+        instance_ids_str = (
+            "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.speedOverGround,"
+            "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.courseOverGroundTrue"
+        )
         node_ids = parse_instance_ids(instance_ids_str)
         
         assert len(node_ids) == 2
@@ -106,7 +109,10 @@ class TestTimeSeriesUdtfQueries:
         # This tests the time_series_latest_datapoints_udtf template
         from cognite.pygen_spark.utils import parse_instance_ids
 
-        instance_ids_str = "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.speedOverGround,sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.courseOverGroundTrue"
+        instance_ids_str = (
+            "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.speedOverGround,"
+            "sailboat:vessels.urn:mrn:imo:mmsi:258219000::129038::navigation.courseOverGroundTrue"
+        )
         node_ids = parse_instance_ids(instance_ids_str)
         
         assert len(node_ids) == 2
@@ -134,7 +140,6 @@ class TestFilteringQueries:
         assert udtf_file is not None
         
         # Verify filter handling in code
-        code = udtf_file.read_text()
         # Should handle WHERE clause filtering (this would be in Spark SQL, not Python code)
         # But we can verify the UDTF structure supports it
 
