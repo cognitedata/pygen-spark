@@ -18,7 +18,12 @@ class TestUDTFField:
 
     def test_from_property_text(self) -> None:
         """Test creating UDTFField from Text property."""
-        prop = dm.MappedProperty(type=dm.Text(), nullable=True)
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="name",
+            type=dm.Text(),
+            nullable=True,
+        )
         field = UDTFField.from_property("name", prop)
         assert field is not None
         assert field.name == "name"
@@ -28,7 +33,12 @@ class TestUDTFField:
 
     def test_from_property_int64(self) -> None:
         """Test creating UDTFField from Int64 property."""
-        prop = dm.MappedProperty(type=dm.Int64(), nullable=False)
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="boat_guid",
+            type=dm.Int64(),
+            nullable=False,
+        )
         field = UDTFField.from_property("boat_guid", prop)
         assert field is not None
         assert field.name == "boat_guid"
@@ -37,7 +47,12 @@ class TestUDTFField:
 
     def test_from_property_float64(self) -> None:
         """Test creating UDTFField from Float64 property."""
-        prop = dm.MappedProperty(type=dm.Float64(), nullable=True)
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="value",
+            type=dm.Float64(),
+            nullable=True,
+        )
         field = UDTFField.from_property("value", prop)
         assert field is not None
         assert field.name == "value"
@@ -45,7 +60,12 @@ class TestUDTFField:
 
     def test_from_property_boolean(self) -> None:
         """Test creating UDTFField from Boolean property."""
-        prop = dm.MappedProperty(type=dm.Boolean(), nullable=True)
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="is_active",
+            type=dm.Boolean(),
+            nullable=True,
+        )
         field = UDTFField.from_property("is_active", prop)
         assert field is not None
         assert field.name == "is_active"
@@ -53,14 +73,25 @@ class TestUDTFField:
 
     def test_from_property_with_description(self) -> None:
         """Test creating UDTFField with description."""
-        prop = dm.MappedProperty(type=dm.Text(), nullable=True, description="Test description")
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="name",
+            type=dm.Text(),
+            nullable=True,
+            description="Test description",
+        )
         field = UDTFField.from_property("name", prop)
         assert field is not None
         assert field.description == "Test description"
 
     def test_from_property_direct_relation(self) -> None:
         """Test creating UDTFField from DirectRelation property."""
-        prop = dm.MappedProperty(type=dm.DirectRelation(), nullable=True)
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="related_id",
+            type=dm.DirectRelation(),
+            nullable=True,
+        )
         field = UDTFField.from_property("related_id", prop)
         assert field is not None
         assert "String" in field.spark_type

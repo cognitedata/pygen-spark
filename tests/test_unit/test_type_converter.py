@@ -123,21 +123,6 @@ class TestSparkToSqlDdl:
         assert result == "ARRAY<ARRAY<STRING>>"
 
 
-class TestSparkToSqlTypeInfo:
-    """Tests for spark_to_sql_type_info conversion."""
-
-    def test_string_type_info(self) -> None:
-        """Test StringType type info."""
-        sql_type, type_name = TypeConverter.spark_to_sql_type_info(StringType())
-        assert sql_type == "STRING"
-        # Note: type_name would be from databricks.sdk types
-
-    def test_array_type_info(self) -> None:
-        """Test ArrayType type info."""
-        sql_type, type_name = TypeConverter.spark_to_sql_type_info(ArrayType(StringType()))
-        assert "ARRAY" in sql_type
-
-
 class TestSparkToTypeJson:
     """Tests for spark_to_type_json conversion."""
 

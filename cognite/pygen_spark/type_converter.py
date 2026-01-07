@@ -28,6 +28,8 @@ except ImportError as e:
 
 if TYPE_CHECKING:
     from cognite.client import data_modeling as dm
+else:
+    import cognite.client.data_modeling as dm
 
 
 class TypeConverter:
@@ -48,8 +50,6 @@ class TypeConverter:
         Returns:
             PySpark DataType object
         """
-        import cognite.client.data_modeling as dm
-        
         # Map CDF property types to PySpark types
         if isinstance(property_type, (dm.Int32, dm.Int64)):
             base_type = LongType()
