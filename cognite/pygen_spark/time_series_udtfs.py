@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from pyspark.sql.types import (
     StructType,
@@ -203,8 +203,8 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             # Set defaults for start/end if not provided
-            start_value: str = start or "2w-ago"  # type: ignore[assignment]  # Default to last 2 weeks
-            end_value: str = end or "now"  # type: ignore[assignment]
+            start_value: str = cast(str, start or "2w-ago")  # Default to last 2 weeks
+            end_value: str = cast(str, end or "now")
             
             try:
                 # Ensure client is initialized
@@ -422,8 +422,8 @@ class TimeSeriesDatapointsLongUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set defaults for start/end if not provided
-            start_value: str = start or "2w-ago"  # type: ignore[assignment]
-            end_value: str = end or "now"  # type: ignore[assignment]
+            start_value: str = cast(str, start or "2w-ago")
+            end_value: str = cast(str, end or "now")
             
             try:
                 # Ensure client is initialized
@@ -641,7 +641,7 @@ class TimeSeriesLatestDatapointsUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set default for before if not provided
-            before_value: str = before or "now"  # type: ignore[assignment]
+            before_value: str = cast(str, before or "now")
             
             try:
                 # Ensure client is initialized
