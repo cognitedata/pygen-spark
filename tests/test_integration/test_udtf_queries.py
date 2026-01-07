@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, call
 
 import pytest
 from cognite.client import data_modeling as dm
 
 from cognite.pygen_spark import SparkUDTFGenerator
+
+if TYPE_CHECKING:
+    from cognite.client import CogniteClient
 
 
 @pytest.mark.integration
@@ -18,7 +22,7 @@ class TestDataModelUdtfQueries:
         self,
         spark_udtf_generator: SparkUDTFGenerator,
         sample_sailboat_view: dm.View,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test basic UDTF query with all NULL filters (Cell 14)."""
         # Generate UDTF
@@ -41,7 +45,7 @@ class TestDataModelUdtfQueries:
         self,
         spark_udtf_generator: SparkUDTFGenerator,
         sample_sailboat_view: dm.View,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test UDTF query with named parameters and filter (Cell 15)."""
         # Mock CDF API response for filtered query
@@ -70,7 +74,7 @@ class TestTimeSeriesUdtfQueries:
 
     def test_single_time_series_query(
         self,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test single time series datapoints query (Cell 17)."""
         # This tests the time_series_datapoints_udtf template
@@ -83,7 +87,7 @@ class TestTimeSeriesUdtfQueries:
 
     def test_multiple_time_series_query(
         self,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test multiple time series datapoints query (Cell 18)."""
         # This tests the time_series_datapoints_long_udtf template
@@ -103,7 +107,7 @@ class TestTimeSeriesUdtfQueries:
 
     def test_latest_time_series_query(
         self,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test latest time series datapoints query (Cell 19)."""
         # This tests the time_series_latest_datapoints_udtf template
@@ -126,7 +130,7 @@ class TestFilteringQueries:
     def test_filter_by_external_id(
         self,
         spark_udtf_generator: SparkUDTFGenerator,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test filtering by external_id (Cell 20)."""
         # Mock CDF API response
@@ -146,7 +150,7 @@ class TestFilteringQueries:
     def test_filter_by_property(
         self,
         spark_udtf_generator: SparkUDTFGenerator,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test filtering by property (Cell 21)."""
         # Mock CDF API response for name filter
@@ -165,7 +169,7 @@ class TestFilteringQueries:
     def test_filter_by_space_and_external_id(
         self,
         spark_udtf_generator: SparkUDTFGenerator,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test filtering by space and external_id (Cell 22)."""
         # Mock CDF API response
@@ -184,7 +188,7 @@ class TestFilteringQueries:
     def test_filter_by_numeric_range(
         self,
         spark_udtf_generator: SparkUDTFGenerator,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test filtering by numeric range (Cell 23)."""
         # Mock CDF API response
@@ -203,7 +207,7 @@ class TestFilteringQueries:
     def test_complex_filtering_with_order_by(
         self,
         spark_udtf_generator: SparkUDTFGenerator,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test complex filtering with multiple conditions (Cell 24)."""
         # Mock CDF API response
@@ -235,7 +239,7 @@ class TestJoinQueries:
         spark_udtf_generator: SparkUDTFGenerator,
         sample_sailboat_view: dm.View,
         sample_nmea_time_series_view: dm.View,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test JOIN between small_boat_udtf and nmea_time_series_udtf (Cell 25)."""
         # Generate both UDTFs

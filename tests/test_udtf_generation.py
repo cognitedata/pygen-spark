@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
+from cognite.client import data_modeling as dm
 
 from cognite.pygen_spark import SparkUDTFGenerator
+
+if TYPE_CHECKING:
+    from cognite.client import CogniteClient
 
 
 def test_generate_udtfs(
     spark_udtf_generator: SparkUDTFGenerator,
-    sample_view,
+    sample_view: dm.View,
 ) -> None:
     """Test basic UDTF generation."""
     result = spark_udtf_generator.generate_udtfs()
@@ -31,7 +37,7 @@ def test_generate_udtfs(
 
 def test_generate_views(
     spark_udtf_generator: SparkUDTFGenerator,
-    sample_view,
+    sample_view: dm.View,
 ) -> None:
     """Test SQL View generation."""
     result = spark_udtf_generator.generate_views(

@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 from cognite.client import data_modeling as dm
 
 from cognite.pygen_spark import SparkUDTFGenerator
+
+if TYPE_CHECKING:
+    from cognite.client import CogniteClient
 
 
 class TestSparkUDTFGenerator:
@@ -15,7 +19,7 @@ class TestSparkUDTFGenerator:
 
     def test_init(
         self,
-        mock_cognite_client,
+        mock_cognite_client: object,  # type: ignore[type-arg]
         temp_output_dir: Path,
         sample_data_model: dm.DataModel[dm.View],
     ) -> None:
