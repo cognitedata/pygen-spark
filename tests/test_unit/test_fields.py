@@ -23,6 +23,8 @@ class TestUDTFField:
             container_property_identifier="name",
             type=dm.Text(),
             nullable=True,
+            immutable=False,
+            auto_increment=False,
         )
         field = UDTFField.from_property("name", prop)
         assert field is not None
@@ -38,6 +40,8 @@ class TestUDTFField:
             container_property_identifier="boat_guid",
             type=dm.Int64(),
             nullable=False,
+            immutable=False,
+            auto_increment=False,
         )
         field = UDTFField.from_property("boat_guid", prop)
         assert field is not None
@@ -52,6 +56,8 @@ class TestUDTFField:
             container_property_identifier="value",
             type=dm.Float64(),
             nullable=True,
+            immutable=False,
+            auto_increment=False,
         )
         field = UDTFField.from_property("value", prop)
         assert field is not None
@@ -65,6 +71,8 @@ class TestUDTFField:
             container_property_identifier="is_active",
             type=dm.Boolean(),
             nullable=True,
+            immutable=False,
+            auto_increment=False,
         )
         field = UDTFField.from_property("is_active", prop)
         assert field is not None
@@ -78,6 +86,8 @@ class TestUDTFField:
             container_property_identifier="name",
             type=dm.Text(),
             nullable=True,
+            immutable=False,
+            auto_increment=False,
             description="Test description",
         )
         field = UDTFField.from_property("name", prop)
@@ -91,6 +101,8 @@ class TestUDTFField:
             container_property_identifier="related_id",
             type=dm.DirectRelation(),
             nullable=True,
+            immutable=False,
+            auto_increment=False,
         )
         field = UDTFField.from_property("related_id", prop)
         assert field is not None
