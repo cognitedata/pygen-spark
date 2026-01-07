@@ -203,8 +203,8 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             # Set defaults for start/end if not provided
-            start_value: str = "2w-ago" if start is None else start
-            end_value: str = "now" if end is None else end
+            start_value: str = "2w-ago" if start is None else start  # type: ignore[assignment]
+            end_value: str = "now" if end is None else end  # type: ignore[assignment]
             
             try:
                 # Ensure client is initialized
@@ -422,8 +422,8 @@ class TimeSeriesDatapointsLongUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set defaults for start/end if not provided
-            start_value: str = "2w-ago" if start is None else start
-            end_value: str = "now" if end is None else end
+            start_value: str = "2w-ago" if start is None else start  # type: ignore[assignment]
+            end_value: str = "now" if end is None else end  # type: ignore[assignment]
             
             try:
                 # Ensure client is initialized
@@ -641,7 +641,7 @@ class TimeSeriesLatestDatapointsUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set default for before if not provided
-            before_value: str = "now" if before is None else before
+            before_value: str = "now" if before is None else before  # type: ignore[assignment]
             
             try:
                 # Ensure client is initialized
