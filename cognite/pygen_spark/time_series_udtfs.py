@@ -203,8 +203,8 @@ class TimeSeriesDatapointsUDTF:
                 return
             
             # Set defaults for start/end if not provided
-            start_value = "2w-ago" if start is None else start
-            end_value = "now" if end is None else end
+            start_value: str = "2w-ago" if start is None else start
+            end_value: str = "now" if end is None else end
             
             try:
                 # Ensure client is initialized
@@ -422,8 +422,8 @@ class TimeSeriesDatapointsLongUDTF:
             instance_ids = [NodeId(space, eid) for eid in external_id_list]
             
             # Set defaults for start/end if not provided
-            start_value = "2w-ago" if start is None else start
-            end_value = "now" if end is None else end
+            start_value: str = "2w-ago" if start is None else start
+            end_value: str = "now" if end is None else end
             
             try:
                 # Ensure client is initialized
