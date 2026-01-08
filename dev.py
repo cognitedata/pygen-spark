@@ -192,4 +192,3 @@ def _get_change(bump_text: str) -> Literal["major", "minor", "patch", "skip"]:
 
 if __name__ == "__main__":
     app()
-
