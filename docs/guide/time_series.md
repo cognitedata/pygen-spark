@@ -68,9 +68,9 @@ for udtf_name, file_path in result.generated_files.items():
 
 **Note**: Time series UDTFs use the same Jinja2 template-based generation as Data Model UDTFs, ensuring consistent behavior, error handling (`_classify_error()`), and initialization patterns (`_create_client()`, `_init_success`).
 
-### Option 2: Use Generated Classes Directly
+### Option 2: Use Template-Generated Classes Directly
 
-If you've already generated the UDTF files, you can import and register them directly:
+The `pygen-spark` package includes template-generated time series UDTF classes for convenience. These classes are generated from the same Jinja2 templates used in Option 1, ensuring consistent behavior:
 
 ```python
 from pyspark.sql.functions import udtf
@@ -92,7 +92,7 @@ spark.udtf.register("time_series_latest_datapoints_udtf", time_series_latest_dat
 print("✓ Time Series UDTFs registered")
 ```
 
-**Note**: These classes are generated from templates and are included in the `pygen-spark` package for convenience. For customization, use Option 1 to generate your own versions.
+**Note**: These classes are generated from templates and are included in the `pygen-spark` package for convenience. They use the same template-based generation as Data Model UDTFs, ensuring consistent behavior, error handling, and initialization patterns. For customization, use Option 1 to generate your own versions.
 
 ## Querying Single Time Series
 

@@ -9,7 +9,14 @@ A code generation library that extends [pygen](https://github.com/cognitedata/py
 
 ## Overview
 
-`cognite.pygen_spark` (PyPI: `cognite-pygen-spark`) generates strongly-typed Python UDTF functions from CDF Data Models, allowing you to query CDF data directly from Spark SQL. The generated UDTFs work with any Spark cluster (standalone, YARN, Kubernetes, or local development).
+`cognite.pygen_spark` (PyPI: `cognite-pygen-spark`) is a **generic Spark UDTF code generation library** that works with any Spark cluster (standalone, YARN, Kubernetes, or local development). It generates strongly-typed Python UDTF functions from CDF Data Models using Jinja2 templates, allowing you to query CDF data directly from Spark SQL.
+
+**Package Purpose:**
+- **Generic Spark Support**: Works with any Spark cluster, not limited to Databricks
+- **Template-Based Generation**: Uses Jinja2 templates to generate UDTF code for both Data Model UDTFs and Time Series UDTFs
+- **Type Conversion Utilities**: Provides `TypeConverter` class for converting between CDF types, PySpark DataTypes, and SQL DDL
+- **Connection Configuration**: Provides `CDFConnectionConfig` Pydantic model for managing CDF credentials from TOML/YAML files
+- **Utility Functions**: Helper functions for consistent UDTF naming and other generic Spark utilities
 
 ## Features
 
