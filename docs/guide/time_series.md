@@ -191,8 +191,7 @@ FROM vessel_udtf(
 ) v
 CROSS JOIN LATERAL (
     SELECT * FROM time_series_datapoints_udtf(
-        space => v.space,
-        external_id => v.speed_ts_external_id,
+        instance_id => CONCAT(v.space, ':', v.speed_ts_external_id),
         start => '1d-ago',
         end => 'now',
         client_id => 'your-client-id',
