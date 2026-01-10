@@ -223,8 +223,7 @@ cognite_config = config["cognite"]
 # Use in SQL query
 query = f"""
 SELECT * FROM time_series_datapoints_udtf(
-    space => 'sailboat',
-    external_id => 'vessel.speed',
+    instance_id => 'sailboat:vessel.speed',
     start => '1d-ago',
     end => 'now',
     client_id => '{cognite_config["client_id"]}',
