@@ -1,0 +1,217 @@
+"""Protobuf parser module for time series datapoints using Silver Standard pattern.
+
+Implements Arrow BinaryArray → Parse pattern for zero-copy protobuf processing.
+"""
+
+from __future__ import annotations
+
+import sys
+from typing import TYPE_CHECKING
+
+import pyarrow as pa
+
+if TYPE_CHECKING:
+    pass
+
+# Try to import protobuf message definitions
+# Option 1: Use SDK's protobuf module (if available)
+try:
+    from cognite.client._proto.data_point_list_response_pb2 import DataPointListResponse
+    from cognite.client._proto.data_points_pb2 import (
+        AggregateDatapoint,
+        InstanceId,
+        NumericDatapoint,
+        StringDatapoint,
+    )
+    PROTOBUF_AVAILABLE = True
+except ImportError:
+    # Option 2: Fallback - protobuf definitions should be embedded in generated code
+    # For now, create dummy classes to prevent syntax errors
+    PROTOBUF_AVAILABLE = False
+    
+    class DataPointListResponse:
+        def __init__(self) -> None:
+            self.items = []
+    
+    class InstanceId:
+        def __init__(self) -> None:
+            self.space = ""
+            self.externalId = ""
+    
+    class NumericDatapoint:
+        def __init__(self) -> None:
+            self.timestamp = 0
+            self.value = 0.0
+    
+    class StringDatapoint:
+        def __init__(self) -> None:
+            self.timestamp = 0
+            self.value = ""
+    
+    class AggregateDatapoint:
+        def __init__(self) -> None:
+            self.timestamp = 0
+            self.average = 0.0
+            self.max = 0.0
+            self.min = 0.0
+            self.count = 0.0
+            self.sum = 0.0
+
+
+def _parse_protobuf_from_arrow(
+    response_content: bytes,
+    aggregates: str | None = None,
+) -> pa.Table:
+    """Parse protobuf using Silver Standard pattern: Arrow BinaryArray → Loop → Parse.
+    
+    This follows the Spark 4.0 vectorized UDTF pattern where binary data is
+    converted to Arrow BinaryArray first, then parsed in a loop.
+    
+    Args:
+        response_content: Protobuf binary response from CDF API
+        aggregates: Aggregate type if requesting aggregates (e.g., "average", "max", "min")
+        
+    Returns:
+        PyArrow Table with timestamp and value columns
+    """
+    if not PROTOBUF_AVAILABLE:
+        sys.stderr.write("[UDTF] ✗ CONFIGURATION: Protobuf message definitions not available\n")
+        # Return empty table
+        schema = pa.schema([
+            pa.field("timestamp", pa.timestamp('ms'), nullable=True),
+            pa.field("value", pa.float64(), nullable=True),
+        ])
+        return pa.Table.from_arrays(
+            [pa.array([], type=pa.timestamp('ms')), pa.array([], type=pa.float64())],
+            schema=schema
+        )
+    
+    # Silver Standard: Convert HTTP response to Arrow BinaryArray (zero-copy pattern)
+    binary_array = pa.array([response_content], type=pa.binary())
+    
+    timestamps: list[int] = []
+    values: list[float | str] = []
+    
+    # Silver Standard: Loop through Arrow array, parse each message
+    for bytes_val in binary_array:
+        if bytes_val is not None:
+            # The heavy lifting: Python parsing from Arrow
+            proto_response = DataPointListResponse()
+            try:
+                proto_response.ParseFromString(bytes_val.as_py())
+            except Exception as e:
+                sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: Failed to parse protobuf: {e}\n")
+                continue
+            
+            # Extract datapoints from protobuf message
+            for item in proto_response.items:
+                if item.HasField('numericDatapoints'):
+                    # Raw numeric datapoints
+                    for dp in item.numericDatapoints.datapoints:
+                        timestamps.append(dp.timestamp)
+                        values.append(dp.value)
+                
+                elif item.HasField('aggregateDatapoints'):
+                    # Aggregate datapoints
+                    for dp in item.aggregateDatapoints.datapoints:
+                        timestamps.append(dp.timestamp)
+                        
+                        # Extract aggregate value based on requested aggregate type
+                        if aggregates:
+                            agg_name = aggregates.lower()
+                            if agg_name == 'average':
+                                values.append(dp.average)
+                            elif agg_name == 'max':
+                                values.append(dp.max)
+                            elif agg_name == 'min':
+                                values.append(dp.min)
+                            elif agg_name == 'count':
+                                values.append(float(dp.count))
+                            elif agg_name == 'sum':
+                                values.append(dp.sum)
+                            elif agg_name == 'interpolation':
+                                values.append(dp.interpolation)
+                            elif agg_name == 'stepinterpolation':
+                                values.append(dp.stepInterpolation)
+                            elif agg_name == 'continuousvariance':
+                                values.append(dp.continuousVariance)
+                            elif agg_name == 'discretevariance':
+                                values.append(dp.discreteVariance)
+                            elif agg_name == 'totalvariation':
+                                values.append(dp.totalVariation)
+                            else:
+                                # Default to average if aggregate type not recognized
+                                values.append(dp.average)
+                        else:
+                            # Default to average if no specific aggregate requested
+                            values.append(dp.average)
+                
+                elif item.HasField('stringDatapoints'):
+                    # String datapoints
+                    for dp in item.stringDatapoints.datapoints:
+                        timestamps.append(dp.timestamp)
+                        values.append(dp.value)
+    
+    # Build Arrow arrays directly from extracted data
+    if not timestamps:
+        # Return empty table with correct schema
+        schema = pa.schema([
+            pa.field("timestamp", pa.timestamp('ms'), nullable=True),
+            pa.field("value", pa.float64(), nullable=True),
+        ])
+        return pa.Table.from_arrays(
+            [pa.array([], type=pa.timestamp('ms')), pa.array([], type=pa.float64())],
+            schema=schema
+        )
+    
+    # Convert timestamps (int64 milliseconds) to Arrow timestamp arrays
+    timestamp_array = pa.array(timestamps, type=pa.timestamp('ms'))
+    
+    # Determine value type based on data
+    if values and isinstance(values[0], str):
+        value_array = pa.array(values, type=pa.string())
+        value_type = pa.string()
+    else:
+        # All numeric values (float or int)
+        value_array = pa.array(values, type=pa.float64())
+        value_type = pa.float64()
+    
+    schema = pa.schema([
+        pa.field("timestamp", pa.timestamp('ms'), nullable=True),
+        pa.field("value", value_type, nullable=True),
+    ])
+    
+    return pa.Table.from_arrays([timestamp_array, value_array], schema=schema)
+
+
+def _protobuf_to_record_batches(
+    response_content: bytes,
+    aggregates: str | None = None,
+    batch_size: int = 8192,
+) -> list[pa.RecordBatch]:
+    """Convert protobuf response to list of RecordBatches.
+    
+    Args:
+        response_content: Protobuf binary response from CDF API
+        aggregates: Aggregate type if requesting aggregates
+        batch_size: Maximum rows per RecordBatch
+        
+    Returns:
+        List of RecordBatches
+    """
+    arrow_table = _parse_protobuf_from_arrow(response_content, aggregates)
+    
+    if arrow_table.num_rows == 0:
+        # Return empty RecordBatch with correct schema
+        empty_batch = pa.RecordBatch.from_arrays(
+            [pa.array([], type=field.type) for field in arrow_table.schema],
+            schema=arrow_table.schema
+        )
+        return [empty_batch]
+    
+    # Yield in batches
+    batches = []
+    for batch in arrow_table.to_batches(max_chunksize=batch_size):
+        batches.append(batch)
+    
+    return batches

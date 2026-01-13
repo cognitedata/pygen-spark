@@ -2,32 +2,20 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Iterator
+import sys
+import traceback
+from typing import TYPE_CHECKING
 
-# Wrap critical imports in try-except to handle missing dependencies (DBR < 18.1 limitation)
-try:
-    from cognite.client import CogniteClient
-    from cognite.client.data_classes.data_modeling.ids import ViewId
-    from cognite.client.data_classes.filters import Filter
-    from cognite.client.config import ClientConfig
-    from cognite.client.credentials import OAuthClientCredentials
-    COGNITE_AVAILABLE = True
-    IMPORT_ERROR = None
-except ImportError as import_error:
-    COGNITE_AVAILABLE = False
-    IMPORT_ERROR = str(import_error)
-    # Create dummy classes to prevent syntax errors if imports fail
-    class CogniteClient:
-        pass
-    class ViewId:
-        pass
-    class Filter:
-        pass
-    class ClientConfig:
-        pass
-    class OAuthClientCredentials:
-        pass
+import pyarrow as pa
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+from pyspark.sql.udtf import udtf
+
+# Include helper modules (embedded directly in generated code)
+{% include '_http_client.py.jinja' %}
+{% include '_arrow_converter.py.jinja' %}
 
 from pyspark.sql.types import (
     StructType,
@@ -45,25 +33,24 @@ class {{ view.external_id|title }}UDTF:
     """User-Defined Table Function for {{ view.external_id }} View.
     
     Generated from CDF View: {{ view.space }}.{{ view.external_id }} {{ view.version }}
+    Uses vectorized Arrow UDTF (PySpark 4.0.0+) for zero-copy data transfer.
     """
 
     def __init__(self) -> None:
         """Initialize UDTF (no parameters allowed when using analyze method).
         
         This method works for all three registration modes:
-        - Unity Catalog UDTF (direct call): Parameters go to eval(), client initialized there
-        - Unity Catalog View (via view): Parameters go to eval(), client initialized there
-        - Session-scoped: Parameters go to eval(), client initialized there
+        - Unity Catalog UDTF (direct call): Parameters go to eval(), token initialized there
+        - Unity Catalog View (via view): Parameters go to eval(), token initialized there
+        - Session-scoped: Parameters go to eval(), token initialized there
         
-        Client initialization happens in eval() for all modes to ensure compatibility
+        Token initialization happens in eval() for all modes to ensure compatibility
         with PySpark Connect requirements.
         """
         # Initialize instance variables
-        self.client = None
-        self._client_initialized = False
-        self._init_error = None
-        self._init_error_category = None
-        self._cached_credentials = None
+        self._token_cache: dict[str, str | float] | None = None
+        self._init_error: str | None = None
+        self._init_error_category: str | None = None
         self._init_success = True  # Mark as ready for eval() initialization
 
     @staticmethod
@@ -98,443 +85,252 @@ class {{ view.external_id|title }}UDTF:
         from pyspark.sql.udtf import AnalyzeResult
         return AnalyzeResult({{ view.external_id|title }}UDTF.outputSchema())
 
+    @udtf(useArrow=True)
     def eval(
         self,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        tenant_id: str | None = None,
-        cdf_cluster: str | None = None,
-        project: str | None = None,
+        client_id: pa.Array | None = None,
+        client_secret: pa.Array | None = None,
+        tenant_id: pa.Array | None = None,
+        cdf_cluster: pa.Array | None = None,
+        project: pa.Array | None = None,
 {% for prop in properties %}
-        {{ prop.name }}: {{ prop.python_type }} | None = None{% if not loop.last %},{% endif %}
+        {{ prop.name }}: pa.Array | None = None{% if not loop.last %},{% endif %}
 {% endfor %}
-    ) -> Iterator[tuple[object, ...]]:
-        """Execute UDTF and return rows.
+    ) -> Iterator[pa.RecordBatch]:
+        """Execute vectorized UDTF and return RecordBatches.
         
         This method works for all three registration modes:
-        - Unity Catalog UDTF (direct call): All parameters passed here, client initialized on first call
-        - Unity Catalog View (via view): All parameters passed here, client initialized on first call
-        - Session-scoped: All parameters passed here, client initialized on first call
+        - Unity Catalog UDTF (direct call): All parameters passed here, token initialized on first call
+        - Unity Catalog View (via view): All parameters passed here, token initialized on first call
+        - Session-scoped: All parameters passed here, token initialized on first call
         
-        Client initialization happens here for all modes to ensure compatibility with
+        Token initialization happens here for all modes to ensure compatibility with
         PySpark Connect requirements (__init__ must be parameter-free when analyze method exists).
         
         Args:
-            client_id: OAuth2 client ID (required)
-            client_secret: OAuth2 client secret (required)
-            tenant_id: Azure AD tenant ID (required)
-            cdf_cluster: CDF cluster URL (required)
-            project: CDF project name (required)
+            client_id: OAuth2 client ID (Arrow Array, extract scalar)
+            client_secret: OAuth2 client secret (Arrow Array, extract scalar)
+            tenant_id: Azure AD tenant ID (Arrow Array, extract scalar)
+            cdf_cluster: CDF cluster URL (Arrow Array, extract scalar)
+            project: CDF project name (Arrow Array, extract scalar)
 {% for prop in properties %}
-            {{ prop.name }}: {{ prop.description or prop.name }} (optional, defaults to None)
+            {{ prop.name }}: {{ prop.description or prop.name }} (Arrow Array, extract scalar)
 {% endfor %}
         
         Yields:
-            Tuples representing rows from the View
+            Arrow RecordBatches representing rows from the View
         """
-        import sys
-        import traceback
-        
         try:
-            # Initialize client if not already initialized (session-scoped mode)
-            if not self._client_initialized:
-                if client_id is None or client_secret is None:
-                    error_msg = "Missing credentials: client_id and client_secret are required for session-scoped UDTFs"
-                    error_category = 'CONFIGURATION'
-                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                    yield (
-{% for prop in properties %}
-                        None,
-{% endfor %}
-                        "None",  # space (error indicator)
-                        "None",  # external_id (error indicator)
-                    )
-                    return
-                
-                # Check if dependencies are available
-                if not COGNITE_AVAILABLE:
-                    error_msg = f"Missing dependencies: {IMPORT_ERROR}. Install cognite-sdk or use DBR 18.1+ with ENVIRONMENT clause."
-                    error_category = 'CONFIGURATION'
-                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                    yield (
-{% for prop in properties %}
-                        None,
-{% endfor %}
-                        "None",  # space (error indicator)
-                        "None",  # external_id (error indicator)
-                    )
-                    return
-                
-                try:
-                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)
-                    self._client_initialized = True
-                    self._init_error = None
-                    self._init_error_category = None
-                except Exception as e:
-                    try:
-                        self._init_error_category = self._classify_error(e)
-                    except Exception:
-                        self._init_error_category = 'UNKNOWN'
-                    self._init_error = f"{type(e).__name__}: {str(e)}"
-                    self._client_initialized = True
-                    sys.stderr.write(f"[UDTF] ✗ {self._init_error_category}: {self._init_error}\n")
-                    yield (
-{% for prop in properties %}
-                        None,
-{% endfor %}
-                        "None",  # space (error indicator)
-                        "None",  # external_id (error indicator)
-                    )
-                    return
-            
-            # Check if initialization succeeded
-            if not hasattr(self, '_init_success') or not self._init_success or self._init_error is not None:
-                error_msg = getattr(self, '_init_error', 'Unknown initialization error')
-                error_category = getattr(self, '_init_error_category', 'UNKNOWN')
+            # Extract scalar values from Arrow Arrays (for auth and query params)
+            if client_id is None or len(client_id) == 0:
+                error_msg = "Missing credentials: client_id is required"
+                error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                yield (
-{% for prop in properties %}
-                    None,
-{% endfor %}
-                    "None",  # space (error indicator)
-                    "None",  # external_id (error indicator)
-                )
+                yield self._empty_record_batch()
                 return
             
-            # Build CDF filter from input parameters
-            filters = self._build_cdf_filter({
+            client_id_str = client_id[0].as_py() if client_id else None
+            client_secret_str = client_secret[0].as_py() if client_secret and len(client_secret) > 0 else None
+            tenant_id_str = tenant_id[0].as_py() if tenant_id and len(tenant_id) > 0 else None
+            cdf_cluster_str = cdf_cluster[0].as_py() if cdf_cluster and len(cdf_cluster) > 0 else None
+            project_str = project[0].as_py() if project and len(project) > 0 else None
+            
+            if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
+                error_msg = "Missing required credentials or configuration"
+                error_category = 'CONFIGURATION'
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+                yield self._empty_record_batch()
+                return
+            
+            # Extract filter parameters from Arrow Arrays
+            filter_params: dict[str, object] = {}
 {% for prop in properties %}
-                "{{ prop.name }}": {{ prop.name }},
+            if {{ prop.name }} is not None and len({{ prop.name }}) > 0:
+                filter_params["{{ prop.name }}"] = {{ prop.name }}[0].as_py()
 {% endfor %}
-            })
+            
+            # Get OAuth token (with caching)
+            try:
+                token, expires_at = _get_oauth_token(
+                    client_id_str,
+                    client_secret_str,
+                    tenant_id_str,
+                    cdf_cluster_str,
+                    self._token_cache,
+                )
+                # Cache token for next call
+                self._token_cache = {
+                    "access_token": token,
+                    "expires_at": expires_at,
+                }
+            except Exception as e:
+                try:
+                    self._init_error_category = _classify_error(None, e)
+                except Exception:
+                    self._init_error_category = 'UNKNOWN'
+                self._init_error = f"{type(e).__name__}: {str(e)}"
+                sys.stderr.write(f"[UDTF] ✗ {self._init_error_category}: {self._init_error}\n")
+                yield self._empty_record_batch()
+                return
+            
+            # Build filter JSON from input parameters
+            filter_json = self._build_filter_json(filter_params)
             
             try:
                 sys.stderr.write(f"[UDTF] Querying CDF View: {{ view.space }}.{{ view.external_id }} {{ view.version }}\n")
-                sys.stderr.write(f"[UDTF] Filter: {type(filters).__name__ if filters else 'None'}\n")
+                sys.stderr.write(f"[UDTF] Filter: {filter_json if filter_json else 'None'}\n")
                 
-                # Query CDF Data Model Instances by View (views are independent of data models)
-                instances = self.client.data_modeling.instances.list(
-                    sources=ViewId(
-                        space="{{ view.space }}",
-                        external_id="{{ view.external_id }}",
-                        version="{{ view.version }}",
-                    ),
-                    instance_type="{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
-                    filter=filters if filters else None,  # Pass None if filter is empty
-                    limit=1000,  # Configurable
+                # Make direct REST call to CDF API
+                base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+                api_path = f"/api/v1/projects/{project_str}/models/instances/list"
+                full_url = f"{base_url}{api_path}"
+                
+                # Build request payload
+                payload = {
+                    "sources": [
+                        {
+                            "type": "view",
+                            "space": "{{ view.space }}",
+                            "externalId": "{{ view.external_id }}",
+                            "version": "{{ view.version }}",
+                        }
+                    ],
+                    "instanceType": "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
+                    "limit": 1000,
+                }
+                
+                if filter_json:
+                    payload["filter"] = filter_json
+                
+                # Make request
+                response = _make_request(
+                    method="POST",
+                    url=full_url,
+                    token=token,
+                    json_data=payload,
+                    timeout=30,
                 )
                 
-                # Yield rows
-                row_count = 0
-                for instance in instances:
-                    row = (
-{% for prop in properties %}
-                        self._extract_property_value(instance.get("{{ prop.name }}")),
-{% endfor %}
-                        instance.space,
-                        instance.external_id,
-                    )
-                    yield row
-                    row_count += 1
+                # Parse JSON response
+                response_data = response.json()
+                items = response_data.get("items", [])
                 
-                sys.stderr.write(f"[UDTF] ✓ Successfully yielded {row_count} rows\n")
-                
-                # If no rows were found, yield at least one row with all None values
-                # This prevents "end-of-input" error when the view is empty
-                if row_count == 0:
-                    sys.stderr.write(f"[UDTF] ⚠ No instances found, yielding empty row to prevent 'end-of-input' error\n")
-                    yield (
+                # Convert JSON to Arrow Table
+                properties_list = [
 {% for prop in properties %}
-                        None,
+                    {
+                        "name": "{{ prop.name }}",
+                        "spark_type": "{{ prop.spark_type }}",
+                    },
 {% endfor %}
-                        "None",  # space (error indicator)
-                        "None",  # external_id (error indicator)
-                    )
+                ]
+                
+                arrow_table = _json_to_arrow_table(items, properties_list)
+                
+                # Convert to RecordBatches and yield
+                batches = _arrow_table_to_record_batches(arrow_table)
+                for batch in batches:
+                    yield batch
+                
+                sys.stderr.write(f"[UDTF] ✓ Successfully yielded {arrow_table.num_rows} rows\n")
+                
             except Exception as e:
                 # Log error for debugging
                 error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
                 sys.stderr.write(error_info)
-                # Yield a row with all None values to match schema
-                # Error information is logged to stderr, not included in the result
-                yield (
-{% for prop in properties %}
-                    None,
-{% endfor %}
-                    "None",  # space (error indicator)
-                    "None",  # external_id (error indicator)
-                )
+                # Yield empty RecordBatch to match schema
+                yield self._empty_record_batch()
+                
         except Exception as outer_error:
-            # Last resort: if anything goes wrong, yield a row with all None values
-            # This ensures we always return something, preventing "end-of-input" errors
+            # Last resort: if anything goes wrong, yield empty RecordBatch
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n{traceback.format_exc()}\n")
-            yield (
+            yield self._empty_record_batch()
+
+    def _empty_record_batch(self) -> pa.RecordBatch:
+        """Create empty RecordBatch with correct schema."""
+        schema = self._arrow_schema()
+        return pa.RecordBatch.from_arrays(
+            [pa.array([], type=field.type) for field in schema],
+            schema=schema
+        )
+
+    def _arrow_schema(self) -> pa.Schema:
+        """Build Arrow schema from view properties."""
+        fields = []
 {% for prop in properties %}
-                None,
+        # {{ prop.name }}: {{ prop.spark_type }}
+        {% if "String" in prop.spark_type or "Array" in prop.spark_type %}
+        fields.append(pa.field("{{ prop.name }}", pa.string(), nullable=True))
+        {% elif "Long" in prop.spark_type or "Integer" in prop.spark_type %}
+        fields.append(pa.field("{{ prop.name }}", pa.int64(), nullable=True))
+        {% elif "Double" in prop.spark_type or "Float" in prop.spark_type %}
+        fields.append(pa.field("{{ prop.name }}", pa.float64(), nullable=True))
+        {% elif "Boolean" in prop.spark_type %}
+        fields.append(pa.field("{{ prop.name }}", pa.bool_(), nullable=True))
+        {% elif "Timestamp" in prop.spark_type %}
+        fields.append(pa.field("{{ prop.name }}", pa.timestamp('ms'), nullable=True))
+        {% else %}
+        fields.append(pa.field("{{ prop.name }}", pa.string(), nullable=True))
+        {% endif %}
 {% endfor %}
-                "None",  # space (error indicator)
-                "None",  # external_id (error indicator)
-            )
+        fields.append(pa.field("space", pa.string(), nullable=True))
+        fields.append(pa.field("external_id", pa.string(), nullable=True))
+        return pa.schema(fields)
 
-    def _extract_property_value(self, value: object) -> object:
-        """Extract the actual value from a CDF property value using Pydantic-style validation.
+    def _build_filter_json(self, filters: dict[str, object]) -> dict | None:
+        """Build CDF API filter JSON from input parameters.
         
-        This follows the same pattern as pygen-main's `as_direct_relation_reference` helper,
-        but extracts just the external_id string for UDTF output.
-        
-        Note: Unlike `as_direct_relation_reference`, this method returns `object` (not `DirectRelationReference`)
-        because it can return various types (str, list, None, etc.) depending on the input.
-        This matches the UDTF output schema which uses primitive types.
-        
-        Handles:
-        - DirectRelationReference objects -> extract external_id
-        - Arrays of DirectRelationReference -> extract external_ids
-        - Dict representations -> extract externalId/external_id
-        - String representations -> parse externalId
-        - JSON string arrays -> parse to Python lists
-        - Regular values -> return as-is
-        - None -> return None
-        
-        Args:
-            value: The property value from instance.get()
-            
-        Returns:
-            The extracted value (string for DirectRelation, list for arrays, etc.)
-        """
-        from cognite.client.data_classes.data_modeling import DirectRelationReference
-        import re
-        import json
-        
-        if value is None:
-            return None
-        
-        # Helper to extract external_id from a DirectRelationReference-like value
-        def extract_external_id(val: object) -> str | None:
-            """Extract external_id from various DirectRelation representations.
-            
-            This follows the same pattern as pygen-main's as_direct_relation_reference,
-            but returns just the external_id string instead of a DirectRelationReference object.
-            
-            Args:
-                val: Value that may represent a DirectRelation (DirectRelationReference, dict, tuple, str, etc.)
-            
-            Returns:
-                external_id string if val represents a DirectRelation, None otherwise
-            """
-            # Already a DirectRelationReference object
-            if isinstance(val, DirectRelationReference):
-                return val.external_id
-            
-            # NodeId-like object (has space and external_id attributes)
-            if hasattr(val, 'external_id') and hasattr(val, 'space'):
-                return val.external_id
-            
-            # Dict with camelCase
-            if isinstance(val, dict) and "externalId" in val:
-                return str(val["externalId"])
-            
-            # Dict with snake_case
-            if isinstance(val, dict) and "external_id" in val:
-                return str(val["external_id"])
-            
-            # Tuple (space, external_id)
-            if isinstance(val, tuple) and len(val) == 2:
-                return str(val[1])
-            
-            # String representation: "{externalId=country::257, space=sailboat}"
-            if isinstance(val, str) and val.startswith("{") and "externalId=" in val:
-                match = re.search(r'externalId=([^,}]+)', val)
-                if match:
-                    return match.group(1).strip()
-            
-            return None
-        
-        # If it's already a list/tuple, process it directly
-        if isinstance(value, (list, tuple)):
-            extracted = []
-            for item in value:
-                item_external_id = extract_external_id(item)
-                if item_external_id is not None:
-                    extracted.append(item_external_id)
-                else:
-                    extracted.append(item)
-            return extracted
-        
-        # Check if it's a JSON string that represents an array
-        # Handle cases like: "[""257679870""]" or '["257679870"]' -> ["257679870"]
-        if isinstance(value, str):
-            stripped = value.strip()
-            # Check if it looks like a JSON array
-            if stripped.startswith("[") and stripped.endswith("]"):
-                try:
-                    # Try parsing as JSON
-                    parsed = json.loads(value)
-                    if isinstance(parsed, list):
-                        # Recursively extract external_ids from the parsed array
-                        extracted = []
-                        for item in parsed:
-                            item_external_id = extract_external_id(item)
-                            if item_external_id is not None:
-                                extracted.append(item_external_id)
-                            else:
-                                extracted.append(item)
-                        return extracted
-                except (json.JSONDecodeError, ValueError):
-                    # If JSON parsing fails, try to extract as DirectRelation string
-                    pass
-            
-            # Check if it's a DirectRelation string representation
-            external_id = extract_external_id(value)
-            if external_id is not None:
-                return external_id
-        
-        # Check if it's a DirectRelation (single value, not a string)
-        external_id = extract_external_id(value)
-        if external_id is not None:
-            return external_id
-        
-        # For other types, return as-is
-        return value
-
-    def _create_client(
-        self,
-        client_id: str,
-        client_secret: str,
-        tenant_id: str,
-        cdf_cluster: str,
-        project: str,
-        **kwargs: dict[str, object],
-    ) -> CogniteClient:
-        """Create CogniteClient with OAuth2 credentials.
-        
-        Note: Secrets are expected to be stored as plain text in Databricks Secret Manager.
-        Databricks encrypts secrets at rest, so no additional encoding is needed.
-        """
-        import sys
-        
-        # Dependencies should already be checked in __init__, but double-check here
-        if not COGNITE_AVAILABLE:
-            raise ImportError(f"Missing dependencies: {IMPORT_ERROR}")
-        
-        # These imports should work if COGNITE_AVAILABLE is True, but import locally for clarity
-        from cognite.client import CogniteClient
-        
-        try:
-            # Use SDK's default_oauth_client_credentials method (aligned with pygen-main's load_cognite_client_from_toml)
-            # This ensures consistent URL construction: https://{cdf_cluster}.cognitedata.com
-            client = CogniteClient.default_oauth_client_credentials(
-                project=project,
-                cdf_cluster=cdf_cluster,
-                tenant_id=tenant_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                client_name="pygen-spark",
-            )
-            
-            # Verify authentication by attempting to get a token
-            # This will raise an exception if authentication fails
-            try:
-                _ = client.config.credentials.authorization_header()
-                sys.stderr.write(f"[UDTF] ✓ Authentication successful for project: {project}\n")
-            except Exception as auth_error:
-                sys.stderr.write(f"[UDTF] ✗ Authentication failed: {type(auth_error).__name__}: {str(auth_error)}\n")
-                raise
-            
-            return client
-        except Exception as e:
-            sys.stderr.write(f"[UDTF] ✗ Failed to create CogniteClient: {type(e).__name__}: {str(e)}\n")
-            import traceback
-            sys.stderr.write(f"{traceback.format_exc()}\n")
-            raise
-
-    def _classify_error(self, error: Exception) -> str:
-        """Classify the type of initialization error.
-        
-        Args:
-            error: The exception that occurred during initialization
-        
-        Returns:
-            Error category string: 'AUTHENTICATION', 'CONFIGURATION', 'NETWORK', or 'UNKNOWN'
-        """
-        error_type = type(error).__name__
-        error_msg = str(error).lower()
-        
-        # Authentication-related errors
-        auth_keywords = [
-            'authentication', 'auth', 'unauthorized', 'forbidden', '401', '403',
-            'invalid_client', 'invalid_grant', 'invalid_credentials', 'token',
-            'oauth', 'client_id', 'client_secret', 'tenant_id', 'credential'
-        ]
-        if any(keyword in error_msg for keyword in auth_keywords):
-            return 'AUTHENTICATION'
-        
-        # Configuration-related errors
-        config_keywords = [
-            'config', 'configuration', 'missing', 'required', 'invalid',
-            'valueerror', 'typeerror', 'attributeerror', 'keyerror'
-        ]
-        if any(keyword in error_msg for keyword in config_keywords) or error_type in ['ValueError', 'TypeError', 'AttributeError', 'KeyError']:
-            return 'CONFIGURATION'
-        
-        # Network-related errors
-        network_keywords = [
-            'connection', 'timeout', 'network', 'dns', 'resolve', 'unreachable',
-            'connectionerror', 'timeouterror', 'httperror', 'urlerror'
-        ]
-        if any(keyword in error_msg for keyword in network_keywords) or error_type in ['ConnectionError', 'TimeoutError', 'HTTPError', 'URLError']:
-            return 'NETWORK'
-        
-        # Default to unknown
-        return 'UNKNOWN'
-    
-    def _build_cdf_filter(self, filters: dict[str, object]) -> Filter | None:
-        """Build CDF API filter from input parameters.
-        
-        This follows the same pattern as pygen-main's filter generation,
-        using view_id.as_property_ref() to create proper property references
-        and Filter objects (Equals, In, etc.) instead of plain dictionaries.
+        Replicates SDK's filter serialization format exactly.
         
         Args:
             filters: Dictionary of filter conditions
         
         Returns:
-            CDF API Filter object or None if no filters
+            CDF API filter JSON dict or None if no filters
         """
-        from cognite.client.data_classes.filters import Equals, In, And
-        from cognite.client.data_classes.data_modeling.ids import ViewId
-        
         # Filter out None values
         active_filters = {k: v for k, v in filters.items() if v is not None}
         
         if not active_filters:
             return None
         
-        # Create ViewId for property references (like pygen-main does)
-        view_id = ViewId(
-            space="{{ view.space }}",
-            external_id="{{ view.external_id }}",
-            version="{{ view.version }}",
-        )
+        # Build property references and filter conditions
+        filter_conditions = []
         
-        # Create Filter objects for each property
-        filter_objects = []
         for prop_name, prop_value in active_filters.items():
-            # Use view_id.as_property_ref() like pygen-main does
-            property_ref = view_id.as_property_ref(prop_name)
+            # Create property reference (matches SDK format)
+            property_ref = {
+                "type": "property",
+                "space": "{{ view.space }}",
+                "externalId": "{{ view.external_id }}",
+                "version": "{{ view.version }}",
+                "property": prop_name,
+            }
             
-            # Handle different value types (matching pygen-main's logic)
+            # Handle different value types
             if isinstance(prop_value, list):
                 # List values use In filter
-                filter_objects.append(In(property_ref, values=prop_value))
+                filter_conditions.append({
+                    "in": {
+                        "property": property_ref,
+                        "values": prop_value,
+                    }
+                })
             else:
                 # Single values use Equals filter
-                filter_objects.append(Equals(property_ref, value=prop_value))
+                filter_conditions.append({
+                    "equals": {
+                        "property": property_ref,
+                        "value": prop_value,
+                    }
+                })
         
-        # Combine multiple filters with And (like pygen-main does)
-        if len(filter_objects) == 1:
-            return filter_objects[0]
-        elif len(filter_objects) > 1:
-            return And(filter_objects)
+        # Combine multiple filters with And
+        if len(filter_conditions) == 1:
+            return filter_conditions[0]
+        elif len(filter_conditions) > 1:
+            return {"and": filter_conditions}
         else:
             return None
 
@@ -548,4 +344,3 @@ class {{ view.external_id|title }}UDTF:
             StructField("space", StringType(), nullable=False),
             StructField("external_id", StringType(), nullable=False),
         ])
-

@@ -11,14 +11,35 @@ from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from pyspark.sql.types import (
-    DoubleType,
-    IntegerType,
-    StringType,
-    StructField,
-    StructType,
-    TimestampType,
-)
+try:
+    from pyspark.sql.types import (
+        DoubleType,
+        IntegerType,
+        StringType,
+        StructField,
+        StructType,
+        TimestampType,
+    )
+except ImportError:
+    # PySpark may not be available in all environments
+    # Create dummy types to prevent import errors
+    class DoubleType:  # type: ignore[no-redef]
+        pass
+
+    class IntegerType:  # type: ignore[no-redef]
+        pass
+
+    class StringType:  # type: ignore[no-redef]
+        pass
+
+    class StructField:  # type: ignore[no-redef]
+        pass
+
+    class StructType:  # type: ignore[no-redef]
+        pass
+
+    class TimestampType:  # type: ignore[no-redef]
+        pass
 
 if TYPE_CHECKING:
     from cognite.client import CogniteClient

@@ -13,11 +13,13 @@ from cognite.client.data_classes.data_modeling import DataModelIdentifier
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import SDKGenerator  # type: ignore[import-untyped]
 from cognite.pygen.config import PygenConfig  # type: ignore[import-untyped]
+
 from cognite.pygen_spark.models import (
     UDTFGenerationResult,
     ViewSQLGenerationResult,
 )
 from cognite.pygen_spark.udtf_generator import SparkMultiAPIGenerator
+from cognite.pygen_spark.utils import _check_pyspark_version
 
 if TYPE_CHECKING:
     from cognite.client.data_classes.data_modeling import View
@@ -53,7 +55,13 @@ class SparkUDTFGenerator(SDKGenerator):
             top_level_package: Top-level Python package name for generated code
             client_name: Name of the client class (required by parent SDKGenerator)
             **kwargs: Additional arguments passed to parent SDKGenerator
+
+        Raises:
+            RuntimeError: If PySpark version is less than 4.0.0
         """
+        # Check PySpark version before proceeding
+        _check_pyspark_version()
+
         # Load data model if it's an identifier
         loaded_data_model = self._load_data_model(data_model, client)
 

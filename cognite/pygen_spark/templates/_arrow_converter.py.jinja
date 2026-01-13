@@ -1,0 +1,259 @@
+"""Arrow conversion module for vectorized UDTFs.
+
+Converts JSON responses to PyArrow Tables and RecordBatches for zero-copy data transfer.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+from typing import TYPE_CHECKING
+
+import pyarrow as pa
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+# Batch size for RecordBatch generation
+_BATCH_SIZE = 8192
+
+
+def _extract_property_value_from_dict(value: object) -> object:
+    """Extract property value from raw dict (no SDK objects).
+    
+    Handles DirectRelation references as dicts: {"externalId": "...", "space": "..."}
+    This is used when parsing JSON responses directly (no SDK deserialization).
+    
+    Args:
+        value: Property value from JSON response (dict, list, str, etc.)
+        
+    Returns:
+        Extracted value (str for DirectRelation, list for arrays, etc.)
+    """
+    if value is None:
+        return None
+    
+    # Helper to extract external_id from DirectRelation dict
+    def extract_external_id(val: object) -> str | None:
+        """Extract external_id from DirectRelation dict representation."""
+        # Dict with camelCase
+        if isinstance(val, dict) and "externalId" in val:
+            return str(val["externalId"])
+        # Dict with snake_case
+        if isinstance(val, dict) and "external_id" in val:
+            return str(val["external_id"])
+        # String representation: "{externalId=country::257, space=sailboat}"
+        if isinstance(val, str) and val.startswith("{") and "externalId=" in val:
+            match = re.search(r'externalId=([^,}]+)', val)
+            if match:
+                return match.group(1).strip()
+        return None
+    
+    # Handle arrays
+    if isinstance(value, (list, tuple)):
+        extracted = []
+        for item in value:
+            item_external_id = extract_external_id(item)
+            if item_external_id is not None:
+                extracted.append(item_external_id)
+            elif isinstance(item, dict):
+                # Recursively extract from nested dicts
+                extracted.append(_extract_property_value_from_dict(item))
+            else:
+                extracted.append(item)
+        return extracted
+    
+    # Check if it's a JSON string array
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    extracted = []
+                    for item in parsed:
+                        item_external_id = extract_external_id(item)
+                        if item_external_id is not None:
+                            extracted.append(item_external_id)
+                        else:
+                            extracted.append(item)
+                    return extracted
+            except (json.JSONDecodeError, ValueError):
+                pass
+        
+        # Check if it's a DirectRelation string
+        external_id = extract_external_id(value)
+        if external_id is not None:
+            return external_id
+    
+    # Check if it's a DirectRelation dict
+    external_id = extract_external_id(value)
+    if external_id is not None:
+        return external_id
+    
+    # Return as-is for other types
+    return value
+
+
+def _python_to_arrow_array(data: Sequence[object], spark_type: str) -> pa.Array:
+    """Convert Python list to Arrow array based on Spark type.
+    
+    Args:
+        data: List of Python values
+        spark_type: Spark type name (e.g., "StringType", "LongType", "ArrayType")
+        
+    Returns:
+        PyArrow Array
+    """
+    if not data:
+        # Return empty array with appropriate type
+        if "String" in spark_type or "Array" in spark_type:
+            return pa.array([], type=pa.string())
+        if "Long" in spark_type or "Integer" in spark_type:
+            return pa.array([], type=pa.int64())
+        if "Double" in spark_type or "Float" in spark_type:
+            return pa.array([], type=pa.float64())
+        if "Boolean" in spark_type:
+            return pa.array([], type=pa.bool_())
+        if "Timestamp" in spark_type:
+            return pa.array([], type=pa.timestamp('ms'))
+        return pa.array([], type=pa.string())  # Default
+    
+    # Determine type from first non-None value
+    first_value = next((v for v in data if v is not None), None)
+    
+    if first_value is None:
+        # All None values - use string as default
+        return pa.array(data, type=pa.string())
+    
+    # Handle arrays (list values)
+    if isinstance(first_value, list):
+        # Convert list of lists to Arrow array of strings (JSON serialized)
+        string_data = [json.dumps(v) if v is not None else None for v in data]
+        return pa.array(string_data, type=pa.string())
+    
+    # Handle strings
+    if isinstance(first_value, str):
+        return pa.array(data, type=pa.string())
+    
+    # Handle integers
+    if isinstance(first_value, int):
+        return pa.array(data, type=pa.int64())
+    
+    # Handle floats
+    if isinstance(first_value, float):
+        return pa.array(data, type=pa.float64())
+    
+    # Handle booleans
+    if isinstance(first_value, bool):
+        return pa.array(data, type=pa.bool_())
+    
+    # Default to string
+    return pa.array([str(v) if v is not None else None for v in data], type=pa.string())
+
+
+def _json_to_arrow_table(
+    items: list[dict[str, object]],
+    properties: list[dict[str, object]],
+) -> pa.Table:
+    """Convert JSON response items to Arrow Table.
+    
+    Args:
+        items: List of instance dicts from CDF API response
+        properties: List of property definitions with 'name' and 'spark_type' keys
+        
+    Returns:
+        PyArrow Table with columns for each property plus space and external_id
+    """
+    if not items:
+        # Return empty table with correct schema
+        fields = []
+        for prop in properties:
+            prop_type = prop.get("spark_type", "StringType")
+            if "String" in prop_type or "Array" in prop_type:
+                fields.append(pa.field(prop["name"], pa.string(), nullable=True))
+            elif "Long" in prop_type or "Integer" in prop_type:
+                fields.append(pa.field(prop["name"], pa.int64(), nullable=True))
+            elif "Double" in prop_type or "Float" in prop_type:
+                fields.append(pa.field(prop["name"], pa.float64(), nullable=True))
+            elif "Boolean" in prop_type:
+                fields.append(pa.field(prop["name"], pa.bool_(), nullable=True))
+            elif "Timestamp" in prop_type:
+                fields.append(pa.field(prop["name"], pa.timestamp('ms'), nullable=True))
+            else:
+                fields.append(pa.field(prop["name"], pa.string(), nullable=True))
+        
+        fields.append(pa.field("space", pa.string(), nullable=True))
+        fields.append(pa.field("external_id", pa.string(), nullable=True))
+        
+        schema = pa.schema(fields)
+        return pa.Table.from_arrays(
+            [pa.array([], type=field.type) for field in schema],
+            schema=schema
+        )
+    
+    # Extract columns efficiently
+    columns: dict[str, list[object]] = {}
+    
+    # Extract property columns
+    for prop in properties:
+        prop_name = prop["name"]
+        col_data = [
+            _extract_property_value_from_dict(item.get(prop_name))
+            for item in items
+        ]
+        columns[prop_name] = col_data
+    
+    # Add space and external_id columns
+    columns["space"] = [item.get("space", "None") for item in items]
+    columns["external_id"] = [item.get("externalId") or item.get("external_id", "None") for item in items]
+    
+    # Build Arrow arrays
+    arrow_arrays = []
+    fields = []
+    
+    for prop in properties:
+        prop_name = prop["name"]
+        prop_type = prop.get("spark_type", "StringType")
+        col_data = columns[prop_name]
+        arrow_array = _python_to_arrow_array(col_data, prop_type)
+        arrow_arrays.append(arrow_array)
+        
+        # Create field with appropriate type
+        fields.append(pa.field(prop_name, arrow_array.type, nullable=True))
+    
+    # Add space and external_id fields
+    space_array = pa.array(columns["space"], type=pa.string())
+    external_id_array = pa.array(columns["external_id"], type=pa.string())
+    arrow_arrays.append(space_array)
+    arrow_arrays.append(external_id_array)
+    fields.append(pa.field("space", pa.string(), nullable=True))
+    fields.append(pa.field("external_id", pa.string(), nullable=True))
+    
+    schema = pa.schema(fields)
+    return pa.Table.from_arrays(arrow_arrays, schema=schema)
+
+
+def _arrow_table_to_record_batches(arrow_table: pa.Table) -> list[pa.RecordBatch]:
+    """Convert Arrow Table to list of RecordBatches.
+    
+    Args:
+        arrow_table: PyArrow Table
+        
+    Returns:
+        List of RecordBatches (batched for optimal performance)
+    """
+    if arrow_table.num_rows == 0:
+        # Return empty RecordBatch with correct schema
+        empty_batch = pa.RecordBatch.from_arrays(
+            [pa.array([], type=field.type) for field in arrow_table.schema],
+            schema=arrow_table.schema
+        )
+        return [empty_batch]
+    
+    # Yield in batches of _BATCH_SIZE rows
+    batches = []
+    for batch in arrow_table.to_batches(max_chunksize=_BATCH_SIZE):
+        batches.append(batch)
+    
+    return batches

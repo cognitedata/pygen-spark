@@ -104,6 +104,8 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         Returns:
             SQL CREATE VIEW statement
         """
+        from cognite.pygen_spark.utils import to_udtf_function_name
+
         template = self.env.get_template("view_sql.py.jinja")
 
         # Pass catalog and schema to template, or use placeholders if not provided
@@ -111,7 +113,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         template_vars = {
             "view": view,
             "secret_scope": secret_scope,
-            "udtf_name": f"{view.external_id}_udtf",
+            "udtf_name": to_udtf_function_name(view.external_id),  # Use consistent snake_case conversion
         }
 
         # Only add catalog/schema if provided (otherwise template will use placeholders)

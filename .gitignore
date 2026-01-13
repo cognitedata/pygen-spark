@@ -45,3 +45,5 @@ generated_udtfs/
 .DS_Store
 Thumbs.db
 
+# Documentation (keep in workspace but not in repo)
+Technical Plan*.md
