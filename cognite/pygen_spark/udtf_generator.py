@@ -45,11 +45,14 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         # Note: We don't need to store data_model anymore - views are independent
         # and we use view.as_id() directly in the template
 
-    def generate_udtf(self, view: View) -> str:
+    def generate_udtf(self, view: View, include_analyze: bool = True, debug: bool = False) -> str:
         """Generate Python UDTF code for a View.
 
         Args:
             view: View object from CDF Data Model
+            include_analyze: If True, includes analyze() method (for session-scoped).
+                            If False, omits analyze() (for Unity Catalog).
+            debug: If True, includes debug logging in generated code.
 
         Returns:
             Generated UDTF Python code as string (formatted with Black)
@@ -69,6 +72,8 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         code = template.render(
             view=view,
             properties=udtf_fields,  # Pass UDTFField objects (like pygen-main passes Field objects)
+            include_analyze=include_analyze,  # Pass include_analyze to template
+            debug=debug,  # Pass debug flag to template
         )
 
         # Format the generated code using Black (like pygen-main does)

@@ -3,6 +3,11 @@
 These UDTFs provide access to CDF Time Series datapoints from Spark SQL,
 supporting both session-scoped and catalog-based registration modes.
 Works with any Spark cluster, not limited to Databricks.
+
+**Note**: This is a convenience module. For Arrow-based UDTFs with zero-copy
+performance, use the template-generated UDTFs from `generate_time_series_udtfs()`.
+The templates use `@udtf(useArrow=True)` and `pa.Array`/`pa.RecordBatch` for
+optimal performance.
 """
 
 from __future__ import annotations
@@ -85,26 +90,24 @@ class TimeSeriesDatapointsUDTF:
 
     @staticmethod
     def analyze(
-        space: str | None = None,
-        external_id: str | None = None,
-        start: str | None = None,
-        end: str | None = None,
-        aggregates: str | None = None,
-        granularity: str | None = None,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        tenant_id: str | None = None,
-        cdf_cluster: str | None = None,
-        project: str | None = None,
-    ) -> object:
+        instance_id,
+        start,
+        end,
+        aggregates,
+        granularity,
+        client_id,
+        client_secret,
+        tenant_id,
+        cdf_cluster,
+        project,
+    ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
 
         This method is used by PySpark Connect to validate arguments and determine output schema.
         For Unity Catalog registration, this method is optional but harmless if present.
 
         Args:
-            space: CDF space name (required)
-            external_id: CDF external_id (required)
+            instance_id: Instance ID in format "space:external_id" (required)
             start: Start timestamp (ISO 8601 or "2w-ago", "1d-ago", etc.)
             end: End timestamp (ISO 8601 or "now", "1d-ahead", etc.)
             aggregates: Optional aggregate type (e.g., "average", "max", "min", "count")
@@ -324,27 +327,35 @@ class TimeSeriesDatapointsLongUDTF:
 
     @staticmethod
     def analyze(
-        space: str | None = None,
-        external_ids: str | None = None,  # Comma-separated list
-        start: str | None = None,
-        end: str | None = None,
-        aggregates: str | None = None,
-        granularity: str | None = None,
-        include_aggregate_name: bool = False,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        tenant_id: str | None = None,
-        cdf_cluster: str | None = None,
-        project: str | None = None,
-    ) -> object:
+        instance_ids,
+        start,
+        end,
+        aggregates,
+        granularity,
+        include_aggregate_name,
+        client_id,
+        client_secret,
+        tenant_id,
+        cdf_cluster,
+        project,
+    ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
 
         Args:
-            space: CDF space name (required, all time series must be in same space)
-            external_ids: Comma-separated list of external_ids (e.g., "foo,bar,baz")
-            start, end, aggregates, granularity: Query parameters
+            instance_ids: Comma-separated list of instance IDs (format: "space:external_id")
+            start: Start timestamp (ISO 8601 or "2w-ago", "1d-ago", etc.)
+            end: End timestamp (ISO 8601 or "now", "1d-ahead", etc.)
+            aggregates: Optional aggregate type (e.g., "average", "max", "min", "count")
+            granularity: Optional granularity for aggregates (e.g., "1h", "1d", "30s")
             include_aggregate_name: Whether to include aggregate name in time_series_external_id
-            client_id, client_secret, tenant_id, cdf_cluster, project: OAuth credentials
+            client_id: OAuth2 client ID (required)
+            client_secret: OAuth2 client secret (required)
+            tenant_id: Azure AD tenant ID (required)
+            cdf_cluster: CDF cluster URL (required)
+            project: CDF project name (required)
+
+        Returns:
+            AnalyzeResult containing the output schema
         """
         from pyspark.sql.udtf import AnalyzeResult
 
@@ -555,24 +566,29 @@ class TimeSeriesLatestDatapointsUDTF:
 
     @staticmethod
     def analyze(
-        space: str | None = None,
-        external_ids: str | None = None,  # Comma-separated list
-        before: str | None = None,
-        include_status: bool = False,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        tenant_id: str | None = None,
-        cdf_cluster: str | None = None,
-        project: str | None = None,
-    ) -> object:
+        instance_ids,
+        before,
+        include_status,
+        client_id,
+        client_secret,
+        tenant_id,
+        cdf_cluster,
+        project,
+    ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
 
         Args:
-            space: CDF space name (required)
-            external_ids: Comma-separated list of external_ids (e.g., "foo,bar,baz")
+            instance_ids: Comma-separated list of instance IDs (format: "space:external_id")
             before: Get latest before this time (ISO 8601 or "1h-ago", "now", etc.)
             include_status: Include status code in output
-            client_id, client_secret, tenant_id, cdf_cluster, project: OAuth credentials
+            client_id: OAuth2 client ID (required)
+            client_secret: OAuth2 client secret (required)
+            tenant_id: Azure AD tenant ID (required)
+            cdf_cluster: CDF cluster URL (required)
+            project: CDF project name (required)
+
+        Returns:
+            AnalyzeResult containing the output schema
         """
         from pyspark.sql.udtf import AnalyzeResult
 

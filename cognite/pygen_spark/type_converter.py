@@ -18,6 +18,7 @@ try:
         DataType,
         DateType,
         DoubleType,
+        IntegerType,
         LongType,
         StringType,
         TimestampType,
@@ -94,7 +95,7 @@ class TypeConverter:
         """
         if isinstance(spark_type, StringType):
             return "STRING"
-        elif isinstance(spark_type, LongType):
+        elif isinstance(spark_type, (LongType, IntegerType)):
             return "INT"
         elif isinstance(spark_type, DoubleType):
             return "DOUBLE"

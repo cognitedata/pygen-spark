@@ -1,11 +1,12 @@
+{% if not skip_docstring %}
 """Protobuf parser module for time series datapoints using Silver Standard pattern.
 
 Implements Arrow BinaryArray → Parse pattern for zero-copy protobuf processing.
+
+Uses lazy imports to avoid conflicts with PySpark Connect's protobuf imports.
 """
 
-from __future__ import annotations
-
-import sys
+{% endif %}
 from typing import TYPE_CHECKING
 
 import pyarrow as pa
@@ -13,49 +14,87 @@ import pyarrow as pa
 if TYPE_CHECKING:
     pass
 
-# Try to import protobuf message definitions
-# Option 1: Use SDK's protobuf module (if available)
-try:
-    from cognite.client._proto.data_point_list_response_pb2 import DataPointListResponse
-    from cognite.client._proto.data_points_pb2 import (
-        AggregateDatapoint,
-        InstanceId,
-        NumericDatapoint,
-        StringDatapoint,
-    )
-    PROTOBUF_AVAILABLE = True
-except ImportError:
-    # Option 2: Fallback - protobuf definitions should be embedded in generated code
-    # For now, create dummy classes to prevent syntax errors
-    PROTOBUF_AVAILABLE = False
+# Module-level cache for protobuf availability (set lazily on first use)
+_PROTOBUF_AVAILABLE: bool | None = None
+_PROTOBUF_CLASSES: dict[str, type] | None = None
+
+
+def _get_protobuf_classes() -> tuple[bool, dict[str, type]]:
+    """Lazy import protobuf message definitions to avoid conflicts with PySpark Connect.
     
-    class DataPointListResponse:
-        def __init__(self) -> None:
-            self.items = []
+    Returns:
+        Tuple of (is_available, classes_dict) where classes_dict contains:
+        - DataPointListResponse
+        - AggregateDatapoint
+        - InstanceId
+        - NumericDatapoint
+        - StringDatapoint
+    """
+    global _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
     
-    class InstanceId:
-        def __init__(self) -> None:
-            self.space = ""
-            self.externalId = ""
+    # Return cached result if already loaded
+    if _PROTOBUF_AVAILABLE is not None and _PROTOBUF_CLASSES is not None:
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
     
-    class NumericDatapoint:
-        def __init__(self) -> None:
-            self.timestamp = 0
-            self.value = 0.0
-    
-    class StringDatapoint:
-        def __init__(self) -> None:
-            self.timestamp = 0
-            self.value = ""
-    
-    class AggregateDatapoint:
-        def __init__(self) -> None:
-            self.timestamp = 0
-            self.average = 0.0
-            self.max = 0.0
-            self.min = 0.0
-            self.count = 0.0
-            self.sum = 0.0
+    # Try to import protobuf message definitions (lazy import)
+    try:
+        from cognite.client._proto.data_point_list_response_pb2 import DataPointListResponse
+        from cognite.client._proto.data_points_pb2 import (
+            AggregateDatapoint,
+            InstanceId,
+            NumericDatapoint,
+            StringDatapoint,
+        )
+        
+        _PROTOBUF_AVAILABLE = True
+        _PROTOBUF_CLASSES = {
+            "DataPointListResponse": DataPointListResponse,
+            "AggregateDatapoint": AggregateDatapoint,
+            "InstanceId": InstanceId,
+            "NumericDatapoint": NumericDatapoint,
+            "StringDatapoint": StringDatapoint,
+        }
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
+    except ImportError:
+        # Fallback - create dummy classes to prevent syntax errors
+        _PROTOBUF_AVAILABLE = False
+        
+        class DataPointListResponse:
+            def __init__(self) -> None:
+                self.items = []
+        
+        class InstanceId:
+            def __init__(self) -> None:
+                self.space = ""
+                self.externalId = ""
+        
+        class NumericDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.value = 0.0
+        
+        class StringDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.value = ""
+        
+        class AggregateDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.average = 0.0
+                self.max = 0.0
+                self.min = 0.0
+                self.count = 0.0
+                self.sum = 0.0
+        
+        _PROTOBUF_CLASSES = {
+            "DataPointListResponse": DataPointListResponse,
+            "AggregateDatapoint": AggregateDatapoint,
+            "InstanceId": InstanceId,
+            "NumericDatapoint": NumericDatapoint,
+            "StringDatapoint": StringDatapoint,
+        }
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
 
 
 def _parse_protobuf_from_arrow(
@@ -67,6 +106,8 @@ def _parse_protobuf_from_arrow(
     This follows the Spark 4.0 vectorized UDTF pattern where binary data is
     converted to Arrow BinaryArray first, then parsed in a loop.
     
+    Uses lazy imports to avoid conflicts with PySpark Connect's protobuf imports.
+    
     Args:
         response_content: Protobuf binary response from CDF API
         aggregates: Aggregate type if requesting aggregates (e.g., "average", "max", "min")
@@ -74,7 +115,11 @@ def _parse_protobuf_from_arrow(
     Returns:
         PyArrow Table with timestamp and value columns
     """
-    if not PROTOBUF_AVAILABLE:
+    # Lazy import protobuf classes (only when function is called)
+    protobuf_available, protobuf_classes = _get_protobuf_classes()
+    DataPointListResponse = protobuf_classes["DataPointListResponse"]
+    
+    if not protobuf_available:
         sys.stderr.write("[UDTF] ✗ CONFIGURATION: Protobuf message definitions not available\n")
         # Return empty table
         schema = pa.schema([

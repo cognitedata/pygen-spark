@@ -1,13 +1,12 @@
+{% if not skip_docstring %}
 """HTTP client module for direct REST calls to CDF API.
 
 This module replicates SDK patterns for OAuth, retries, and error handling
 without requiring the Cognite SDK dependency.
 """
 
-from __future__ import annotations
-
+{% endif %}
 import random
-import sys
 import time
 from typing import TYPE_CHECKING
 
@@ -226,7 +225,16 @@ def _make_request(
             # Don't retry on client errors (4xx) except 429
             if e.response and 400 <= e.response.status_code < 500 and e.response.status_code != 429:
                 error_category = _classify_error(e.response.status_code, e)
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: HTTP error: {e}\n")
+                # Log response body for 400/422 errors to help debug
+                try:
+                    error_body = e.response.text
+                    if error_body:
+                        sys.stderr.write(f"[UDTF] ✗ {error_category}: HTTP error: {e}\n")
+                        sys.stderr.write(f"[UDTF] Response body: {error_body}\n")
+                    else:
+                        sys.stderr.write(f"[UDTF] ✗ {error_category}: HTTP error: {e}\n")
+                except Exception:
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: HTTP error: {e}\n")
                 raise
             # Retry on 429 and 5xx
             retry_tracker.status += 1
