@@ -6,6 +6,7 @@ without requiring the Cognite SDK dependency.
 """
 
 {% endif %}
+import platform
 import random
 import time
 from typing import TYPE_CHECKING
@@ -17,6 +18,24 @@ if TYPE_CHECKING:
 
 # Token expiry leeway (refresh 30 seconds before expiry)
 _TOKEN_EXPIRY_LEEWAY_SECONDS = 30
+
+
+def _get_user_agent() -> str:
+    """Construct User-Agent string matching Python SDK format.
+    
+    Format: {sdk_name}/{version} {python_impl}/{python_version} ({build};{compiler}) {os}/{release}-{machine}-{arch}
+    """
+    sdk_version = "pygen-spark/0.0.0"  # TODO: Get from package version
+    python_version = (
+        f"{platform.python_implementation()}/{platform.python_version()} "
+        f"({platform.python_build()};{platform.python_compiler()})"
+    )
+    os_version_info = [platform.release(), platform.machine(), platform.architecture()[0]]
+    os_version_info = [s for s in os_version_info if s]  # Ignore empty strings
+    os_version_info_str = "-".join(os_version_info)
+    operating_system = f"{platform.system()}/{os_version_info_str}"
+    
+    return f"{sdk_version} {python_version} {operating_system}"
 
 # Retry configuration
 _STATUS_CODES_TO_RETRY = {429, 502, 503, 504}
@@ -176,7 +195,7 @@ def _make_request(
         "Content-Type": "application/json",
         "Accept": "application/protobuf" if accept_protobuf else "application/json",
         "x-cdp-app": "pygen-spark",
-        "User-Agent": "pygen-spark/1.0",
+        "User-Agent": _get_user_agent(),
     }
     if headers:
         request_headers.update(headers)

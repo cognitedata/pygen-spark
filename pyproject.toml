@@ -30,9 +30,7 @@ dependencies = [
     # Runtime dependencies for generated UDTFs (required in Spark cluster)
     # Note: Generated UDTFs require these at runtime, not at code generation time
     # PySpark is provided by Databricks runtime - do not include as dependency
-    # Generated UDTFs require PySpark 4.0.0+ for vectorized UDTF support (useArrow=True)
-    # A runtime version check will raise an error if PySpark < 4.0.0 is detected
-    "pyarrow>=10.0.0",  # REQUIRED for vectorized UDTFs and Arrow RecordBatches
+    # Generated UDTFs use scalar mode only (no Arrow/vectorization)
     "requests>=2.31.0",  # HTTP client (replaces Cognite SDK in generated UDTFs)
     "protobuf>=4.21.0",  # REQUIRED for time series datapoints (protobuf parsing)
 ]

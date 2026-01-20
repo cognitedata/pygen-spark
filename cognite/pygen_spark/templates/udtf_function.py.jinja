@@ -6,8 +6,6 @@ import sys
 import traceback
 from typing import TYPE_CHECKING
 
-import pyarrow as pa
-
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
@@ -25,15 +23,16 @@ from pyspark.sql.types import (
     ArrayType,
 )
 
+{% if use_udtf_decorator %}
 from pyspark.sql.functions import udtf
 
-
-@udtf(useArrow=True)
+@udtf
+{% endif %}
 class {{ view.external_id }}UDTF:
     """User-Defined Table Function for {{ view.external_id }} View.
     
     Generated from CDF View: {{ view.space }}.{{ view.external_id }} {{ view.version }}
-    Uses vectorized Arrow UDTF (PySpark 4.0.0+) for zero-copy data transfer.
+    Uses scalar UDTF execution for Unity Catalog SQL registration compatibility.
     """
 
     def __init__(self) -> None:
@@ -83,22 +82,43 @@ class {{ view.external_id }}UDTF:
         Returns:
             AnalyzeResult containing the output schema
         """
-        from pyspark.sql.udtf import AnalyzeResult
-        return AnalyzeResult({{ view.external_id|title }}UDTF.outputSchema())
+        # Lazy import to avoid circular import during serialization
+        # Import from non-Connect module first to avoid circular import in pyspark.sql.connect.udtf
+        schema = {{ view.external_id }}UDTF.outputSchema()
+        # Use __import__ with fromlist to avoid triggering circular import
+        try:
+            # Try non-Connect module first (avoids circular import in connect.udtf)
+            udtf_mod = __import__('pyspark.sql.udtf', fromlist=['AnalyzeResult'], level=0)
+            AnalyzeResult = getattr(udtf_mod, 'AnalyzeResult')
+            return AnalyzeResult(schema)
+        except (ImportError, AttributeError):
+            # Fallback: try to get from sys.modules if already loaded
+            import sys
+            if 'pyspark.sql.udtf' in sys.modules:
+                mod = sys.modules['pyspark.sql.udtf']
+                if hasattr(mod, 'AnalyzeResult'):
+                    return mod.AnalyzeResult(schema)
+            # Last resort: try connect module (may trigger circular import, but only when method is called)
+            try:
+                connect_mod = __import__('pyspark.sql.connect.udtf', fromlist=['AnalyzeResult'], level=0)
+                AnalyzeResult = getattr(connect_mod, 'AnalyzeResult')
+                return AnalyzeResult(schema)
+            except (ImportError, AttributeError):
+                raise ImportError("Could not import AnalyzeResult from pyspark.sql.udtf or pyspark.sql.connect.udtf")
 {% endif %}
 
     def eval(
         self,
-        client_id: pa.Array | str | None = None,  # Type hint handles both Arrow and Scalar modes
-        client_secret: pa.Array | str | None = None,
-        tenant_id: pa.Array | str | None = None,
-        cdf_cluster: pa.Array | str | None = None,
-        project: pa.Array | str | None = None,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        tenant_id: str | None = None,
+        cdf_cluster: str | None = None,
+        project: str | None = None,
 {% for prop in properties %}
-        {{ prop.name }}: pa.Array | str | None = None{% if not loop.last %},{% endif %}
+        {{ prop.name }}: object | None = None{% if not loop.last %},{% endif %}
 {% endfor %}
-    ) -> Iterator[pa.RecordBatch]:
-        """Execute vectorized UDTF and return RecordBatches.
+    ) -> Iterator[tuple]:
+        """Execute scalar UDTF and yield rows as tuples.
         
         This method works for all three registration modes:
         - Unity Catalog UDTF (direct call): All parameters passed here, token initialized on first call
@@ -109,20 +129,18 @@ class {{ view.external_id }}UDTF:
         PySpark Connect requirements (__init__ must be parameter-free when analyze method exists).
         
         Args:
-            client_id: OAuth2 client ID (Arrow Array, extract scalar)
-            client_secret: OAuth2 client secret (Arrow Array, extract scalar)
-            tenant_id: Azure AD tenant ID (Arrow Array, extract scalar)
-            cdf_cluster: CDF cluster URL (Arrow Array, extract scalar)
-            project: CDF project name (Arrow Array, extract scalar)
+            client_id: OAuth2 client ID (scalar string)
+            client_secret: OAuth2 client secret (scalar string)
+            tenant_id: Azure AD tenant ID (scalar string)
+            cdf_cluster: CDF cluster URL (scalar string)
+            project: CDF project name (scalar string)
 {% for prop in properties %}
-            {{ prop.name }}: {{ prop.description or prop.name }} (Arrow Array, extract scalar)
+            {{ prop.name }}: {{ prop.description or prop.name }} (scalar value)
 {% endfor %}
         
         Yields:
-            Arrow RecordBatches representing rows from the View
+            Tuples representing rows from the View
         """
-        # Defensive import: ensure pyarrow is available (Unity Catalog execution context)
-        import pyarrow as pa
         import sys
         
         # CRITICAL: Define helper functions inside eval() for Unity Catalog compatibility
@@ -132,9 +150,7 @@ class {{ view.external_id }}UDTF:
         {% filter indent(8, first=True, blank=True) %}
         {% include '_http_client.py.jinja' %}
         {% endfilter %}
-        {% filter indent(8, first=True, blank=True) %}
-        {% include '_arrow_converter.py.jinja' %}
-        {% endfilter %}
+        # Arrow conversion helpers removed for scalar-only execution.
         
 {% if debug %}
         # Define logging function that writes to Spark Log4j (visible in Databricks Log4j output)
@@ -190,128 +206,223 @@ class {{ view.external_id }}UDTF:
         _write_debug_log("[UDTF] eval() method called")
 {% endif %}
         
-        # ULTRA-DEFENSIVE: Wrap entire method to ensure we NEVER return malformed RecordBatch
+        # Scalar-only execution for UC SQL registration.
         try:
-            # CRITICAL: When @udtf(useArrow=True) is set, ALWAYS use Arrow mode for output
-            # Unity Catalog may pass scalar strings as parameters, but we still yield RecordBatches
-            # The decorator tells Spark we support Arrow, so we must use it for zero-copy transfer
-            is_scalar_mode = False  # Always False - never yield tuples when useArrow=True
-            
-            # Check parameter types for extraction purposes only (not for mode selection)
-            if client_id is not None:
-                if hasattr(client_id, 'as_py') and hasattr(client_id, '__len__'):
-                    debug_msg = f"[UDTF] Parameters are Arrow arrays (client_id type: {type(client_id).__name__})"
-                else:
-                    debug_msg = f"[UDTF] Parameters are scalar strings, but using Arrow mode for output (client_id type: {type(client_id).__name__})"
-                sys.stderr.write(f"{debug_msg}\n")
-                print(debug_msg)  # Also print to stdout for Serverless SQL visibility
-            
-            # Helper function to extract scalar from Arrow Array OR Scalar String (polyglot mode)
-            # Unity Catalog may pass Scalar Strings even with useArrow=True
-            def _extract_scalar(value) -> str | None:
-                """Extract scalar value from Arrow Array or Scalar String."""
+            import json
+
+            def _extract_scalar(value: object | None) -> object | None:
+                """Extract scalar value from Python input (scalar mode).
+                
+                Handles various types that Unity Catalog SECRET() might return:
+                - PySpark Column objects (has as_py method)
+                - Datetime objects (from SQL TIMESTAMP)
+                - String values directly
+                - Bytes (SECRET might return bytes)
+                - Other types (converted to string)
+                """
                 if value is None:
                     return None
-                # Always try Arrow extraction first (works for both Arrow arrays and scalars)
-                if hasattr(value, 'as_py'):
-                    if hasattr(value, '__len__') and len(value) > 0:
-                        # Arrow array - get first element
-                        return value[0].as_py()
-                    elif hasattr(value, 'as_py'):
-                        # Arrow scalar
-                        return value.as_py()
-                # Fallback: treat as regular Python value (scalar string from SECRET())
-                return str(value) if value else None
-            
-            # Extract scalar values from Arrow Arrays OR Scalar Strings (for auth and query params)
-            if client_id is None:
-                error_msg = "Missing credentials: client_id is required"
-                error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                # Set debug variables for error row
-                debug_auth_status = None
-                debug_api_status = None
-                debug_api_items_count = None
-                debug_error = f"{error_category}: {error_msg}"
-                _write_debug_log(f"Configuration error: {debug_error}")
                 
-                # Create debug row with error information
-                empty_data_cols = []
-{% for prop in properties %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # {{ prop.name }} as NULL
-{% endfor %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # space
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # external_id
+                # Handle PySpark Column objects (has as_py method)
+                if hasattr(value, "as_py"):
+                    try:
+                        result = value.as_py()
+                        # SECRET() might return bytes, convert to string
+                        if isinstance(result, bytes):
+                            return result.decode('utf-8')
+                        return result
+                    except Exception as e:
+                        # If as_py() fails, try to convert to string
+                        sys.stderr.write(f"[UDTF] WARNING: as_py() failed for {type(value).__name__}: {e}\n")
                 
-                # Debug columns with error values
-                schema_info = "error_before_table_creation"
-                debug_cols = {
-                    "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()) if debug_auth_status else pa.array([None], type=pa.string()),
-                    "_debug_api_status": pa.array([debug_api_status], type=pa.string()) if debug_api_status else pa.array([None], type=pa.string()),
-                    "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()) if debug_api_items_count is not None else pa.array([None], type=pa.int64()),
-                    "_debug_execution_mode": pa.array(['arrow'], type=pa.string()),  # Always arrow when useArrow=True
-                    "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                    "_debug_error": pa.array([debug_error], type=pa.string()),
-                    "_debug_schema_info": pa.array([schema_info], type=pa.string()),
-                    "_debug_column_count": pa.array([0], type=pa.int64()),
-                    "_debug_column_names": pa.array([""], type=pa.string()),
-                }
+                # Handle datetime objects (from SQL TIMESTAMP) - preserve them!
+                # Check for datetime-like objects before converting to string
+                if hasattr(value, 'timestamp') or hasattr(value, 'isoformat') or hasattr(value, 'year'):
+                    # This is likely a datetime object - preserve it
+                    return value
                 
-                # Create table with 1 debug row (all NULL data, but debug info populated)
-                # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
+                # Handle string directly
+                if isinstance(value, str):
+                    return value
+                
+                # Handle bytes (SECRET might return bytes)
+                if isinstance(value, bytes):
+                    try:
+                        return value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        sys.stderr.write(f"[UDTF] WARNING: Failed to decode bytes value\n")
+                        return None
+                
+                # Try to convert to string as fallback
                 try:
-                    debug_table = pa.Table.from_arrays(
-                        empty_data_cols + list(debug_cols.values()),
-                        schema=self._arrow_schema()
-                    )
+                    str_value = str(value)
+                    # Don't return empty strings or "None" string
+                    if str_value and str_value.lower() != "none":
+                        return str_value
+                    return None
+                except Exception:
+                    return None
+
+            def _extract_property_value_from_dict(value: object) -> object:
+                """Extract property value from raw dict (no SDK objects)."""
+                import re
+
+                if value is None:
+                    return None
+
+                def extract_external_id(val: object) -> str | None:
+                    if isinstance(val, dict) and "externalId" in val:
+                        return str(val["externalId"])
+                    if isinstance(val, dict) and "external_id" in val:
+                        return str(val["external_id"])
+                    if isinstance(val, str) and val.startswith("{") and "externalId=" in val:
+                        match = re.search(r"externalId=([^,}]+)", val)
+                        if match:
+                            return match.group(1).strip()
+                    return None
+
+                # Handle lists/tuples directly from API
+                if isinstance(value, (list, tuple)):
+                    extracted = []
+                    for item in value:
+                        item_external_id = extract_external_id(item)
+                        if item_external_id is not None:
+                            extracted.append(item_external_id)
+                        elif isinstance(item, dict):
+                            extracted.append(_extract_property_value_from_dict(item))
+                        else:
+                            extracted.append(item)
+                    return extracted
+
+                # Handle strings - check if it's a JSON array string first
+                # This prevents double encoding when API returns arrays as JSON strings
+                if isinstance(value, str):
+                    import json
+                    stripped = value.strip()
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        try:
+                            parsed = json.loads(value)
+                            if isinstance(parsed, list):
+                                # Recursively process the parsed list to extract external_ids if needed
+                                return _extract_property_value_from_dict(parsed)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    # Check for external_id in string format
+                    external_id = extract_external_id(value)
+                    if external_id is not None:
+                        return external_id
+                    # Return string as-is - let _normalize_value decide if it needs parsing
+                    return value
+
+                # Handle dicts
+                external_id = extract_external_id(value)
+                if external_id is not None:
+                    return external_id
+                return value
+
+            def _normalize_value(value: object, spark_type: str) -> object:
+                """Normalize values to match expected Spark types."""
+                if value is None:
+                    return None
+                
+                # CRITICAL: For arrays, handle lists directly FIRST (before any extraction)
+                # For ArrayType, PySpark expects a Python list, NOT a JSON string
+                if "Array" in spark_type:
+                    if isinstance(value, list):
+                        # Already a list from API - return as-is (PySpark expects list for ArrayType)
+                        return value
                     
-                    # Validate the created table
-                    expected_cols = len(self._arrow_schema())
-                    if len(debug_table.schema) != expected_cols:
-                        raise ValueError(
-                            f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                            f"expected {expected_cols}"
-                        )
-                except Exception as table_error:
-                    # If table creation fails, create error table with correct schema
-                    error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty table with correct schema
-                    debug_table = self._empty_record_batch().to_table()
+                    # If it's a JSON string, parse it to a list
+                    if isinstance(value, str):
+                        stripped = value.strip()
+                        if stripped.startswith("[") and stripped.endswith("]"):
+                            try:
+                                parsed = json.loads(value)
+                                if isinstance(parsed, list):
+                                    # Check for double-encoding (first element is a JSON string)
+                                    if parsed and isinstance(parsed[0], str):
+                                        inner_stripped = parsed[0].strip()
+                                        if inner_stripped.startswith("[") and inner_stripped.endswith("]"):
+                                            # Double-encoded! Parse the inner JSON string
+                                            try:
+                                                inner_parsed = json.loads(parsed[0])
+                                                if isinstance(inner_parsed, list):
+                                                    return inner_parsed
+                                            except (json.JSONDecodeError, ValueError):
+                                                pass
+                                    # Valid JSON array - return as list (PySpark expects list)
+                                    return parsed
+                            except (json.JSONDecodeError, ValueError):
+                                # Not valid JSON, continue with normal extraction
+                                pass
                 
-                # Always use Arrow mode - yield RecordBatches
-                # CRITICAL: Wrap batch conversion in try-catch to prevent malformed batches
+                # For non-arrays or arrays that need extraction (e.g., DirectRelation lists)
+                extracted = _extract_property_value_from_dict(value)
+                if extracted is None:
+                    return None
+                
+                # If extraction returned a list (for arrays), return it directly (PySpark expects list)
+                if "Array" in spark_type and isinstance(extracted, list):
+                    return extracted
+                
+                # If extraction returned a string that looks like JSON array, parse it to a list
+                if "Array" in spark_type and isinstance(extracted, str):
+                    stripped = extracted.strip()
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        try:
+                            parsed = json.loads(extracted)
+                            if isinstance(parsed, list):
+                                # Check for double-encoding
+                                if parsed and isinstance(parsed[0], str):
+                                    inner_stripped = parsed[0].strip()
+                                    if inner_stripped.startswith("[") and inner_stripped.endswith("]"):
+                                        # Double-encoded! Parse the inner JSON string
+                                        try:
+                                            inner_parsed = json.loads(parsed[0])
+                                            if isinstance(inner_parsed, list):
+                                                return inner_parsed
+                                        except (json.JSONDecodeError, ValueError):
+                                            pass
+                                return parsed
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                
+                # CRITICAL FIX: Handle relationship properties stored as StringType but can be lists
+                # DirectRelation properties (like files, activities, timeSeries) are stored as StringType
+                # but can contain lists/dicts that need JSON encoding
+                if "StringType" in spark_type and isinstance(extracted, (list, dict)):
+                    # Relationship properties that are lists/dicts must be JSON-encoded
+                    return json.dumps(extracted, ensure_ascii=False)
+                
+                if "Long" in spark_type or "Integer" in spark_type:
+                    try:
+                        return int(extracted)
+                    except (TypeError, ValueError):
+                        return None
+                if "Double" in spark_type or "Float" in spark_type:
+                    try:
+                        return float(extracted)
+                    except (TypeError, ValueError):
+                        return None
+                if "Boolean" in spark_type:
+                    if isinstance(extracted, bool):
+                        return extracted
+                    if isinstance(extracted, str):
+                        return extracted.strip().lower() in {"true", "1", "yes"}
+                    return bool(extracted)
+                return extracted
+
+            # Extract scalar credentials
+{% if debug %}
+            # Debug logging for credential extraction
+            sys.stderr.write(f"[UDTF] DEBUG: Extracting credentials...\n")
+            sys.stderr.write(f"[UDTF] DEBUG: client_id type: {type(client_id).__name__}, hasattr('as_py'): {hasattr(client_id, 'as_py')}\n")
+            if hasattr(client_id, 'as_py'):
                 try:
-                    batches = _arrow_table_to_record_batches(debug_table)
-                except Exception as batch_conv_error:
-                    # If batch conversion fails, log and fall back to empty batch
-                    error_msg = f"CRITICAL: Failed to convert table to batches: {type(batch_conv_error).__name__}: {str(batch_conv_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty batch
-                    yield self._empty_record_batch()
-                    return
-                
-                expected_cols = len(self._arrow_schema())
-                for batch in batches:
-                    # CRITICAL: Validate each batch has the correct schema before yielding
-                    if len(batch.schema) != expected_cols:
-                        # If batch has wrong schema, don't yield it - create correct one instead
-                        error_msg = f"CRITICAL: Batch has {len(batch.schema)} columns, expected {expected_cols}. Replacing with empty batch."
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Yield empty batch with correct schema instead
-                        yield self._empty_record_batch()
-                        return
-                    # Only yield if validation passes
-                    yield batch
-                return
-{% else %}
-                # Always use Arrow mode - yield empty RecordBatch
-                yield self._empty_record_batch()
-                return
+                    extracted_test = client_id.as_py()
+                    sys.stderr.write(f"[UDTF] DEBUG: client_id.as_py() type: {type(extracted_test).__name__}, value preview: {str(extracted_test)[:20] if extracted_test else 'None'}\n")
+                except Exception as e:
+                    sys.stderr.write(f"[UDTF] DEBUG: client_id.as_py() failed: {e}\n")
 {% endif %}
             
             client_id_str = _extract_scalar(client_id)
@@ -319,243 +430,60 @@ class {{ view.external_id }}UDTF:
             tenant_id_str = _extract_scalar(tenant_id)
             cdf_cluster_str = _extract_scalar(cdf_cluster)
             project_str = _extract_scalar(project)
-            
+
+{% if debug %}
+            # Debug logging for extracted credentials
+            sys.stderr.write(f"[UDTF] DEBUG: Extracted credentials:\n")
+            sys.stderr.write(f"  client_id_str: {type(client_id_str).__name__}, length: {len(str(client_id_str)) if client_id_str else 0}\n")
+            sys.stderr.write(f"  client_secret_str: {type(client_secret_str).__name__}, length: {len(str(client_secret_str)) if client_secret_str else 0}\n")
+            sys.stderr.write(f"  tenant_id_str: {tenant_id_str}\n")
+            sys.stderr.write(f"  cdf_cluster_str: {cdf_cluster_str}\n")
+            sys.stderr.write(f"  project_str: {project_str}\n")
+{% endif %}
+
             if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
                 error_msg = "Missing required credentials or configuration"
-                error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                # Set debug variables for error row
-                debug_auth_status = None
-                debug_api_status = None
-                debug_api_items_count = None
-                debug_error = f"{error_category}: {error_msg}"
-                _write_debug_log(f"Configuration error: {debug_error}")
-                
-                # Create debug row with error information
-                empty_data_cols = []
-{% for prop in properties %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # {{ prop.name }} as NULL
-{% endfor %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # space
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # external_id
-                
-                # Debug columns with error values
-                schema_info = "error_before_table_creation"
-                debug_cols = {
-                    "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()) if debug_auth_status else pa.array([None], type=pa.string()),
-                    "_debug_api_status": pa.array([debug_api_status], type=pa.string()) if debug_api_status else pa.array([None], type=pa.string()),
-                    "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()) if debug_api_items_count is not None else pa.array([None], type=pa.int64()),
-                    "_debug_execution_mode": pa.array(['arrow'], type=pa.string()),  # Always arrow when useArrow=True
-                    "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                    "_debug_error": pa.array([debug_error], type=pa.string()),
-                    "_debug_schema_info": pa.array([schema_info], type=pa.string()),
-                    "_debug_column_count": pa.array([0], type=pa.int64()),
-                    "_debug_column_names": pa.array([""], type=pa.string()),
-                }
-                
-                # Create table with 1 debug row (all NULL data, but debug info populated)
-                # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
-                try:
-                    debug_table = pa.Table.from_arrays(
-                        empty_data_cols + list(debug_cols.values()),
-                        schema=self._arrow_schema()
-                    )
-                    
-                    # Validate the created table
-                    expected_cols = len(self._arrow_schema())
-                    if len(debug_table.schema) != expected_cols:
-                        raise ValueError(
-                            f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                            f"expected {expected_cols}"
-                        )
-                except Exception as table_error:
-                    # If table creation fails, create error table with correct schema
-                    error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty table with correct schema
-                    debug_table = self._empty_record_batch().to_table()
-                
-                # Always use Arrow mode - yield RecordBatches
-                # CRITICAL: Wrap batch conversion in try-catch to prevent malformed batches
-                try:
-                    batches = _arrow_table_to_record_batches(debug_table)
-                except Exception as batch_conv_error:
-                    # If batch conversion fails, log and fall back to empty batch
-                    error_msg = f"CRITICAL: Failed to convert table to batches: {type(batch_conv_error).__name__}: {str(batch_conv_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty batch
-                    yield self._empty_record_batch()
-                    return
-                
-                expected_cols = len(self._arrow_schema())
-                for batch in batches:
-                    # CRITICAL: Validate each batch has the correct schema before yielding
-                    if len(batch.schema) != expected_cols:
-                        # If batch has wrong schema, don't yield it - create correct one instead
-                        error_msg = f"CRITICAL: Batch has {len(batch.schema)} columns, expected {expected_cols}. Replacing with empty batch."
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Yield empty batch with correct schema instead
-                        yield self._empty_record_batch()
-                        return
-                    # Only yield if validation passes
-                    yield batch
+                sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
                 return
-{% else %}
-                # Always use Arrow mode - yield empty RecordBatch
-                yield self._empty_record_batch()
-                return
-{% endif %}
-            
-            # Extract filter parameters from Arrow Arrays OR Scalar Strings
+
+            # Build filter params from scalar inputs
+            # Extract properties to handle PySpark Column objects and preserve datetime objects
             filter_params: dict[str, object] = {}
 {% for prop in properties %}
-            prop_value = _extract_scalar({{ prop.name }})
-            if prop_value is not None:
-                filter_params["{{ prop.name }}"] = prop_value
+            if {{ prop.name }} is not None:
+                # Extract scalar value (handles PySpark Column objects, preserves datetime objects)
+                extracted_prop = _extract_scalar({{ prop.name }})
+                if extracted_prop is not None:
+                    filter_params["{{ prop.name }}"] = extracted_prop
 {% endfor %}
-            
-            # Get OAuth token (with caching)
-            try:
-                token, expires_at = _get_oauth_token(
-                    client_id_str,
-                    client_secret_str,
-                    tenant_id_str,
-                    cdf_cluster_str,
-                    self._token_cache,
-                )
-                # Cache token for next call
-                self._token_cache = {
-                    "access_token": token,
-                    "expires_at": expires_at,
-                }
-{% if debug %}
-                # Log successful authentication (both stderr and stdout for Serverless SQL visibility)
-                auth_success = f"[UDTF] ✓ Successfully authenticated with CDF (project: {project_str}, cluster: {cdf_cluster_str})"
-                sys.stderr.write(f"{auth_success}\n")
-                print(auth_success)  # Also print to stdout for Serverless SQL visibility
-                _write_debug_log(auth_success)
-                debug_auth_status = "SUCCESS"
-{% endif %}
-            except Exception as e:
-                try:
-                    self._init_error_category = _classify_error(None, e)
-                except Exception:
-                    self._init_error_category = 'UNKNOWN'
-                self._init_error = f"{type(e).__name__}: {str(e)}"
-                sys.stderr.write(f"[UDTF] ✗ {self._init_error_category}: {self._init_error}\n")
-{% if debug %}
-                # Set debug variables for error row
-                debug_auth_status = "FAILED"
-                debug_api_status = None
-                debug_api_items_count = None
-                debug_error = f"{self._init_error_category}: {self._init_error}"
-                _write_debug_log(f"Authentication failed: {debug_error}")
-                
-                # Create debug row with error information
-                empty_data_cols = []
-{% for prop in properties %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # {{ prop.name }} as NULL
-{% endfor %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # space
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # external_id
-                
-                # Debug columns with error values
-                schema_info = "error_authentication_failed"
-                debug_cols = {
-                    "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()),
-                    "_debug_api_status": pa.array([debug_api_status], type=pa.string()) if debug_api_status else pa.array([None], type=pa.string()),
-                    "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()) if debug_api_items_count is not None else pa.array([None], type=pa.int64()),
-                    "_debug_execution_mode": pa.array(['arrow'], type=pa.string()),  # Always arrow when useArrow=True
-                    "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                    "_debug_error": pa.array([debug_error], type=pa.string()),
-                    "_debug_schema_info": pa.array([schema_info], type=pa.string()),
-                    "_debug_column_count": pa.array([0], type=pa.int64()),
-                    "_debug_column_names": pa.array([""], type=pa.string()),
-                }
-                
-                # Create table with 1 debug row (all NULL data, but debug info populated)
-                # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
-                try:
-                    debug_table = pa.Table.from_arrays(
-                        empty_data_cols + list(debug_cols.values()),
-                        schema=self._arrow_schema()
-                    )
-                    
-                    # Validate the created table
-                    expected_cols = len(self._arrow_schema())
-                    if len(debug_table.schema) != expected_cols:
-                        raise ValueError(
-                            f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                            f"expected {expected_cols}"
-                        )
-                except Exception as table_error:
-                    # If table creation fails, create error table with correct schema
-                    error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty table with correct schema
-                    debug_table = self._empty_record_batch().to_table()
-                
-                # Always use Arrow mode - yield RecordBatches
-                # CRITICAL: Wrap batch conversion in try-catch to prevent malformed batches
-                try:
-                    batches = _arrow_table_to_record_batches(debug_table)
-                except Exception as batch_conv_error:
-                    # If batch conversion fails, log and fall back to empty batch
-                    error_msg = f"CRITICAL: Failed to convert table to batches: {type(batch_conv_error).__name__}: {str(batch_conv_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty batch
-                    yield self._empty_record_batch()
-                    return
-                
-                expected_cols = len(self._arrow_schema())
-                for batch in batches:
-                    # CRITICAL: Validate each batch has the correct schema before yielding
-                    if len(batch.schema) != expected_cols:
-                        # If batch has wrong schema, don't yield it - create correct one instead
-                        error_msg = f"CRITICAL: Batch has {len(batch.schema)} columns, expected {expected_cols}. Replacing with empty batch."
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Yield empty batch with correct schema instead
-                        yield self._empty_record_batch()
-                        return
-                    # Only yield if validation passes
-                    yield batch
-                return
-{% else %}
-                # Always use Arrow mode - yield empty RecordBatch
-                yield self._empty_record_batch()
-                return
-{% endif %}
-            
-            # Build filter JSON from input parameters
+
+            # Get OAuth token and query CDF
+            token, expires_at = _get_oauth_token(
+                str(client_id_str),
+                str(client_secret_str),
+                str(tenant_id_str),
+                str(cdf_cluster_str),
+                self._token_cache,
+            )
+            self._token_cache = {"access_token": token, "expires_at": expires_at}
+
             filter_json = self._build_filter_json(filter_params)
-            
-            # Log query start (both stderr and stdout for Serverless SQL visibility)
-            query_start = f"[UDTF] Querying CDF View: {{ view.space }}.{{ view.external_id }} {{ view.version }}"
-            filter_info = f"[UDTF] Filter: {filter_json if filter_json else 'None'}"
-            sys.stderr.write(f"{query_start}\n")
-            sys.stderr.write(f"{filter_info}\n")
-            print(query_start)  # Also print to stdout for Serverless SQL visibility
-            print(filter_info)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-            _write_debug_log(query_start)
-            _write_debug_log(filter_info)
-{% endif %}
-            
-            try:
-                
-                # Make direct REST call to CDF API
-                base_url = f"https://{cdf_cluster_str}.cognitedata.com"
-                api_path = f"/api/v1/projects/{project_str}/models/instances/list"
-                full_url = f"{base_url}{api_path}"
-                
-                # Build request payload
+            base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+            api_path = f"/api/v1/projects/{project_str}/models/instances/list"
+            full_url = f"{base_url}{api_path}"
+
+            # Define properties list and view metadata (used in pagination loop)
+            properties_list = [
+{% for prop in properties %}
+                {"name": "{{ prop.name }}", "spark_type": "{{ prop.spark_type|replace('()', '') }}"},
+{% endfor %}
+            ]
+            view_key = "{{ view.external_id }}/{{ view.version }}"
+            space_name = "{{ view.space }}"
+
+            # Pagination: iterate through all pages using nextCursor
+            next_cursor: str | None = None
+            while True:
                 payload = {
                     "sources": [
                         {
@@ -571,20 +499,11 @@ class {{ view.external_id }}UDTF:
                     "limit": 1000,
                     "includeTyping": False,
                 }
-                
                 if filter_json:
                     payload["filter"] = filter_json
-                
-{% if debug %}
-                # Log request payload for debugging
-                import json
-                payload_str = json.dumps(payload, indent=2)
-                sys.stderr.write(f"[UDTF] Request payload:\n{payload_str}\n")
-                print(f"[UDTF] Request payload:\n{payload_str}")  # Also print to stdout
-                _write_debug_log(f"Request payload: {payload_str}")
-{% endif %}
-                
-                # Make request
+                if next_cursor is not None:
+                    payload["cursor"] = next_cursor
+
                 response = _make_request(
                     method="POST",
                     url=full_url,
@@ -592,694 +511,226 @@ class {{ view.external_id }}UDTF:
                     json_data=payload,
                     timeout=30,
                 )
-                
-{% if debug %}
-                # Log successful CDF query (both stderr and stdout for Serverless SQL visibility)
-                query_success = f"[UDTF] ✓ Successfully queried CDF API (status: {response.status_code})"
-                sys.stderr.write(f"{query_success}\n")
-                print(query_success)  # Also print to stdout for Serverless SQL visibility
-                _write_debug_log(query_success)
-                debug_api_status = str(response.status_code)
-{% endif %}
-                
-                # Parse JSON response
                 response_data = response.json()
                 items = response_data.get("items", [])
-                
-                # Log API response info (both stderr and stdout for Serverless SQL visibility)
-                items_count = len(items)
-                api_info = f"[UDTF] API returned {items_count} items from CDF"
-                sys.stderr.write(f"{api_info}\n")
-                print(api_info)  # Also print to stdout for Serverless SQL visibility
+
+                # Process items from this page
+                for item in items:
+                    row_values: list[object] = []
 {% if debug %}
-                _write_debug_log(api_info)
-                debug_api_items_count = items_count
-                
-                # Debug: Log response structure to understand format
-                import json
-                if items:
-                    first_item = items[0]
-                    first_item_str = json.dumps(first_item, indent=2, default=str)
-                    sys.stderr.write(f"[UDTF] First item structure:\n{first_item_str}\n")
-                    print(f"[UDTF] First item structure:\n{first_item_str}")
-                    _write_debug_log(f"First item structure: {first_item_str}")
-                    
-                    # Check for different possible structures
-                    view_key = "{{ view.external_id }}/{{ view.version }}"
-                    sys.stderr.write(f"[UDTF] Looking for view_key: '{view_key}'\n")
-                    print(f"[UDTF] Looking for view_key: '{view_key}'")
-                    _write_debug_log(f"Looking for view_key: '{view_key}'")
-                    
-                    if "sources" in first_item:
-                        sources = first_item["sources"]
-                        if isinstance(sources, dict):
-                            sources_keys = list(sources.keys())
-                            sys.stderr.write(f"[UDTF] Sources keys: {sources_keys}\n")
-                            print(f"[UDTF] Sources keys: {sources_keys}")
-                            _write_debug_log(f"Sources keys: {sources_keys}")
-                            if view_key in sources:
-                                view_data = sources[view_key]
-                                view_data_str = json.dumps(view_data, indent=2, default=str)
-                                sys.stderr.write(f"[UDTF] View data in sources:\n{view_data_str}\n")
-                                print(f"[UDTF] View data in sources:\n{view_data_str}")
-                                _write_debug_log(f"View data in sources: {view_data_str}")
-                    
-                    if "properties" in first_item:
-                        properties_dict = first_item["properties"]
-                        if isinstance(properties_dict, dict):
-                            prop_keys = list(properties_dict.keys())
-                            sys.stderr.write(f"[UDTF] Properties top-level keys: {prop_keys}\n")
-                            print(f"[UDTF] Properties top-level keys: {prop_keys}")
-                            _write_debug_log(f"Properties top-level keys: {prop_keys}")
-                            # Check if space is a key
-                            if "{{ view.space }}" in properties_dict:
-                                space_data = properties_dict["{{ view.space }}"]
-                                if isinstance(space_data, dict):
-                                    view_keys = list(space_data.keys())
-                                    sys.stderr.write(f"[UDTF] View keys under space '{{ view.space }}': {view_keys}\n")
-                                    print(f"[UDTF] View keys under space '{{ view.space }}': {view_keys}")
-                                    _write_debug_log(f"View keys under space '{{ view.space }}': {view_keys}")
-                                    if view_key in space_data:
+                    # Initialize debug variables for array properties
+                    tags_raw_repr = None
+                    tags_extracted_repr = None
+                    tags_normalized_repr = None
+                    tags_types = None
+                    tags_raw_type = "None"
+                    tags_extracted_type = "None"
+                    tags_normalized_type = "None"
+                    aliases_raw_repr = None
+                    aliases_extracted_repr = None
+                    aliases_normalized_repr = None
+                    aliases_types = None
+                    aliases_raw_type = "None"
+                    aliases_extracted_type = "None"
+                    aliases_normalized_type = "None"
+{% endif %}
+                    for prop in properties_list:
+                        prop_name = prop["name"]
+                        prop_value = None
+                        sources = item.get("sources", {})
+                        if isinstance(sources, dict) and view_key in sources:
+                            view_data = sources[view_key]
+                            if isinstance(view_data, dict):
+                                prop_value = view_data.get(prop_name)
+                        if prop_value is None:
+                            properties_dict = item.get("properties", {})
+                            if isinstance(properties_dict, dict):
+                                if space_name in properties_dict:
+                                    space_data = properties_dict[space_name]
+                                    if isinstance(space_data, dict) and view_key in space_data:
                                         view_data = space_data[view_key]
-                                        view_data_str = json.dumps(view_data, indent=2, default=str)
-                                        sys.stderr.write(f"[UDTF] View data in properties:\n{view_data_str}\n")
-                                        print(f"[UDTF] View data in properties:\n{view_data_str}")
-                                        _write_debug_log(f"View data in properties: {view_data_str}")
-{% endif %}
-                
-                # Convert JSON to Arrow Table
-                properties_list = [
-{% for prop in properties %}
-                    {
-                        "name": "{{ prop.name }}",
-                        "spark_type": "{{ prop.spark_type|replace('()', '') }}",
-                    },
-{% endfor %}
-                ]
-                
-                # View key for accessing nested properties in response
-                view_key = "{{ view.external_id }}/{{ view.version }}"
-                space_name = "{{ view.space }}"
-                
-                arrow_table = _json_to_arrow_table(items, properties_list, view_key, space_name)
-                
-                # CRITICAL: Validate table schema before proceeding
-                expected_cols = len(properties_list) + 2  # properties + space + external_id
-                actual_cols = len(arrow_table.schema)
-                if actual_cols != expected_cols:
-                    error_msg = (
-                        f"[UDTF] ✗ Schema mismatch: Arrow table has {actual_cols} columns, "
-                        f"but expected {expected_cols}. "
-                        f"Table columns: {[f.name for f in arrow_table.schema]}, "
-                        f"Expected properties: {[p['name'] for p in properties_list]}"
-                    )
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    raise ValueError(error_msg)
-                
+                                        if isinstance(view_data, dict):
+                                            prop_value = view_data.get(prop_name)
+                                if prop_value is None:
+                                    for space_key in properties_dict:
+                                        space_data = properties_dict[space_key]
+                                        if isinstance(space_data, dict) and view_key in space_data:
+                                            view_data = space_data[view_key]
+                                            if isinstance(view_data, dict):
+                                                prop_value = view_data.get(prop_name)
+                                                if prop_value is not None:
+                                                    break
+                        # Fallback: check top-level of item for properties that might be there
+                        # (some API responses may have properties at top level, like tags, aliases)
+                        # This is critical for instance-level metadata like tags, aliases, etc.
+                        if prop_value is None and prop_name in item:
+                            prop_value = item.get(prop_name)
 {% if debug %}
-                # Add debug columns to the arrow table
-                num_rows = arrow_table.num_rows
-                
-                # CRITICAL: If there are 0 data rows, create a single debug row to show what happened
-                if num_rows == 0:
-                    # Create a single row with NULL data columns but populated debug columns
-                    # This ensures we always yield at least one row with debug info
-                    empty_data_cols = []
-{% for prop in properties %}
-                    empty_data_cols.append(pa.array([None], type=pa.string()))  # {{ prop.name }} as NULL
-{% endfor %}
-                    empty_data_cols.append(pa.array([None], type=pa.string()))  # space
-                    empty_data_cols.append(pa.array([None], type=pa.string()))  # external_id
-                    
-                    # Debug columns with actual values
-                    schema_info = f"expected={expected_cols},actual={actual_cols}"
-                    column_names = ",".join([f.name for f in arrow_table.schema])
-                    debug_cols = {
-                        "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()),
-                        "_debug_api_status": pa.array([debug_api_status], type=pa.string()),
-                        "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()),
-                        "_debug_execution_mode": pa.array(['arrow'], type=pa.string()),  # Always arrow when useArrow=True
-                        "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                        "_debug_error": pa.array([debug_error], type=pa.string()),
-                        "_debug_schema_info": pa.array([schema_info], type=pa.string()),
-                        "_debug_column_count": pa.array([actual_cols], type=pa.int64()),
-                        "_debug_column_names": pa.array([column_names], type=pa.string()),
-                    }
-                    
-                    # Create table with 1 row (all NULL data, but debug info populated)
-                    # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
-                    try:
-                        debug_table = pa.Table.from_arrays(
-                            empty_data_cols + list(debug_cols.values()),
-                            schema=self._arrow_schema()
-                        )
-                        
-                        # Validate the created table
-                        expected_cols = len(self._arrow_schema())
-                        if len(debug_table.schema) != expected_cols:
-                            raise ValueError(
-                                f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                                f"expected {expected_cols}"
-                            )
-                        arrow_table = debug_table
-                    except Exception as table_error:
-                        # If table creation fails, create error table with correct schema
-                        error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Fall back to empty table with correct schema
-                        arrow_table = self._empty_record_batch().to_table()
-                else:
-                    # Normal case: add debug columns to existing data rows
-                    schema_info = f"expected={expected_cols},actual={actual_cols}"
-                    column_names = ",".join([f.name for f in arrow_table.schema])
-                    debug_cols = {
-                        "_debug_auth_status": pa.array([debug_auth_status] * num_rows, type=pa.string()),
-                        "_debug_api_status": pa.array([debug_api_status] * num_rows, type=pa.string()),
-                        "_debug_api_items_count": pa.array([debug_api_items_count] * num_rows, type=pa.int64()),
-                        "_debug_execution_mode": pa.array(['arrow'] * num_rows, type=pa.string()),  # Always arrow when useArrow=True
-                        "_debug_rows_yielded": pa.array([num_rows] * num_rows, type=pa.int64()),
-                        "_debug_error": pa.array([debug_error] * num_rows, type=pa.string()),
-                        "_debug_schema_info": pa.array([schema_info] * num_rows, type=pa.string()),
-                        "_debug_column_count": pa.array([actual_cols] * num_rows, type=pa.int64()),
-                        "_debug_column_names": pa.array([column_names] * num_rows, type=pa.string()),
-                    }
-                    # Combine original table with debug columns
-                    # CRITICAL: Extract arrays from table columns correctly
-                    # arrow_table.columns returns Column objects, not arrays
-                    # We need to get the underlying chunks/arrays
-                    original_arrays = []
-                    for i in range(len(arrow_table.schema)):
-                        col = arrow_table.column(i)
-                        # Get the first (and usually only) chunk as the array
-                        if col.num_chunks > 0:
-                            original_arrays.append(col.chunk(0))
-                        else:
-                            # Empty column - create empty array with correct type
-                            original_arrays.append(pa.array([], type=col.type))
-                    
-                    # Validate we have the expected number of arrays
-                    expected_original_cols = len(arrow_table.schema)
-                    if len(original_arrays) != expected_original_cols:
-                        error_msg = (
-                            f"[UDTF] ✗ Schema mismatch: Extracted {len(original_arrays)} arrays, "
-                            f"but table has {expected_original_cols} columns. "
-                            f"Table schema: {[f.name for f in arrow_table.schema]}"
-                        )
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        raise ValueError(error_msg)
-                    
-                    # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
-                    try:
-                        debug_table = pa.Table.from_arrays(
-                            original_arrays + list(debug_cols.values()),
-                            schema=self._arrow_schema()
-                        )
-                        
-                        # Validate the created table
-                        expected_cols = len(self._arrow_schema())
-                        if len(debug_table.schema) != expected_cols:
-                            raise ValueError(
-                                f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                                f"expected {expected_cols}"
-                            )
-                        arrow_table = debug_table
-                    except Exception as table_error:
-                        # If table creation fails, create error table with correct schema
-                        error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Fall back to empty table with correct schema
-                        arrow_table = self._empty_record_batch().to_table()
+                            if prop_value is not None:
+                                import json
+                                value_repr = json.dumps(prop_value) if isinstance(prop_value, (list, dict)) else str(prop_value)
+                                sys.stderr.write(f"[UDTF] DEBUG: Found {prop_name} at top level: type={type(prop_value).__name__}, value={value_repr[:100]}\n")
+                            else:
+                                sys.stderr.write(f"[UDTF] DEBUG: {prop_name} not found at top level of item\n")
 {% endif %}
-                
-                # Debug: Log table info (both stderr and stdout for Serverless SQL visibility)
-                table_info = f"[UDTF] Arrow table created: {arrow_table.num_rows} rows, {len(arrow_table.schema)} columns"
-                mode_info = f"[UDTF] Execution mode: arrow (useArrow=True)"
-                sys.stderr.write(f"{table_info}\n")
-                sys.stderr.write(f"{mode_info}\n")
-                print(table_info)  # Also print to stdout for Serverless SQL visibility
-                print(mode_info)   # Also print to stdout for Serverless SQL visibility
+
 {% if debug %}
-                _write_debug_log(table_info)
-                _write_debug_log(mode_info)
-                debug_execution_mode = 'arrow'  # Always arrow when useArrow=True
-{% endif %}
-                
-                # ALWAYS USE ARROW MODE (when @udtf(useArrow=True) is set)
-                # Yield RecordBatches for zero-copy transfer
-                # CRITICAL: Wrap batch conversion in try-catch to prevent malformed batches
-                try:
-                    batches = _arrow_table_to_record_batches(arrow_table)
-                except Exception as batch_conv_error:
-                    # If batch conversion fails, log and fall back to empty batch
-                    error_msg = f"CRITICAL: Failed to convert table to batches: {type(batch_conv_error).__name__}: {str(batch_conv_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty batch
-                    yield self._empty_record_batch()
-                    return
-                
-                batch_count = 0
-                expected_cols = len(self._arrow_schema())
-                for batch in batches:
-                    # CRITICAL: Validate each batch has the correct schema before yielding
-                    if len(batch.schema) != expected_cols:
-                        # If batch has wrong schema, don't yield it - create correct one instead
-                        error_msg = f"CRITICAL: Batch has {len(batch.schema)} columns, expected {expected_cols}. Replacing with empty batch."
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Yield empty batch with correct schema instead
-                        yield self._empty_record_batch()
-                        return
-                    # Only yield if validation passes
-                    yield batch
-                    batch_count += 1
-                
-                # Log success (both stderr and stdout for Serverless SQL visibility)
-                success_msg = f"[UDTF] ✓ Successfully yielded {arrow_table.num_rows} rows in {batch_count} batches (arrow mode)"
-                sys.stderr.write(f"{success_msg}\n")
-                print(success_msg)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-                _write_debug_log(success_msg)
-                debug_rows_yielded = arrow_table.num_rows
-                debug_execution_mode = 'arrow'  # Always arrow when useArrow=True
-{% endif %}
-                
-            except Exception as e:
-                # Log error for debugging (without traceback to avoid import issues)
-                # Both stderr and stdout for Serverless SQL visibility
-                error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}"
-                sys.stderr.write(error_info)
-                print(error_info)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-                _write_debug_log(error_info)
-                # Try to extract more details from HTTPError
-                error_msg = str(e)
-                if hasattr(e, 'response') and e.response is not None:
-                    try:
-                        error_body = e.response.text or str(e.response.json())
-                        error_msg = f"{error_msg}\nResponse: {error_body}"
-                    except Exception:
-                        pass
-                debug_error = f"{type(e).__name__}: {error_msg}"
-                # Ensure debug_api_status is set if not already
-                if debug_api_status is None:
-                    debug_api_status = "ERROR"
-                
-                # Create debug row with error information
-                empty_data_cols = []
-{% for prop in properties %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # {{ prop.name }} as NULL
-{% endfor %}
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # space
-                empty_data_cols.append(pa.array([None], type=pa.string()))  # external_id
-                
-                # Debug columns with error values
-                schema_info = "error_during_query"
-                debug_cols = {
-                    "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()) if debug_auth_status else pa.array([None], type=pa.string()),
-                    "_debug_api_status": pa.array([debug_api_status], type=pa.string()),
-                    "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()) if debug_api_items_count is not None else pa.array([None], type=pa.int64()),
-                    "_debug_execution_mode": pa.array(['arrow'], type=pa.string()),  # Always arrow when useArrow=True
-                    "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                    "_debug_error": pa.array([debug_error], type=pa.string()),
-                    "_debug_schema_info": pa.array([schema_info], type=pa.string()),
-                    "_debug_column_count": pa.array([0], type=pa.int64()),
-                    "_debug_column_names": pa.array([""], type=pa.string()),
-                }
-                
-                # Create table with 1 debug row (all NULL data, but debug info populated)
-                # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
-                try:
-                    debug_table = pa.Table.from_arrays(
-                        empty_data_cols + list(debug_cols.values()),
-                        schema=self._arrow_schema()
-                    )
-                    
-                    # Validate the created table
-                    expected_cols = len(self._arrow_schema())
-                    if len(debug_table.schema) != expected_cols:
-                        raise ValueError(
-                            f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                            f"expected {expected_cols}"
-                        )
-                except Exception as table_error:
-                    # If table creation fails, create error table with correct schema
-                    error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty table with correct schema
-                    debug_table = self._empty_record_batch().to_table()
-                    expected_cols = len(self._arrow_schema())
-                
-                # Always use Arrow mode - yield RecordBatches
-                # CRITICAL: Wrap batch conversion in try-catch to prevent malformed batches
-                try:
-                    batches = _arrow_table_to_record_batches(debug_table)
-                except Exception as batch_conv_error:
-                    # If batch conversion fails, log and fall back to empty batch
-                    error_msg = f"CRITICAL: Failed to convert table to batches: {type(batch_conv_error).__name__}: {str(batch_conv_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall back to empty batch
-                    yield self._empty_record_batch()
-                    return
-                
-                for batch in batches:
-                    # CRITICAL: Validate each batch has the correct schema
-                    if len(batch.schema) != expected_cols:
-                        raise ValueError(
-                            f"CRITICAL: RecordBatch has {len(batch.schema)} columns, expected {expected_cols}"
-                        )
-                    yield batch
-                return
-{% else %}
-                # Always use Arrow mode - yield empty RecordBatch
-                yield self._empty_record_batch()
-{% endif %}
-                
-            except Exception as outer_error:
-                # Last resort: if anything goes wrong, yield debug row with error info
-                # Both stderr and stdout for Serverless SQL visibility
-                error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
-                sys.stderr.write(f"{error_info}\n")
-                print(error_info)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-                try:
-                    # Set debug variables for error row
-                    debug_auth_status = None
-                    debug_api_status = "ERROR"
-                    debug_api_items_count = None
-                    debug_error = f"{type(outer_error).__name__}: {str(outer_error)}"
-                    _write_debug_log(error_info)
-                    
-                    # Create debug row with error information
-                    empty_data_cols = []
-{% for prop in properties %}
-                    empty_data_cols.append(pa.array([None], type=pa.string()))  # {{ prop.name }} as NULL
-{% endfor %}
-                    empty_data_cols.append(pa.array([None], type=pa.string()))  # space
-                    empty_data_cols.append(pa.array([None], type=pa.string()))  # external_id
-                    
-                    # Debug columns with error values
-                    schema_info = "error_outer_exception"
-                    debug_cols = {
-                        "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()) if debug_auth_status else pa.array([None], type=pa.string()),
-                        "_debug_api_status": pa.array([debug_api_status], type=pa.string()),
-                        "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()) if debug_api_items_count is not None else pa.array([None], type=pa.int64()),
-                        "_debug_execution_mode": pa.array(['arrow'], type=pa.string()),  # Always arrow when useArrow=True
-                        "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                        "_debug_error": pa.array([debug_error], type=pa.string()),
-                        "_debug_schema_info": pa.array([schema_info], type=pa.string()),
-                        "_debug_column_count": pa.array([0], type=pa.int64()),
-                        "_debug_column_names": pa.array([""], type=pa.string()),
-                    }
-                    
-                    # Create table with 1 debug row (all NULL data, but debug info populated)
-                    # CRITICAL: Wrap table creation in try-catch to prevent malformed tables
-                    try:
-                        debug_table = pa.Table.from_arrays(
-                            empty_data_cols + list(debug_cols.values()),
-                            schema=self._arrow_schema()
-                        )
+                        # Capture raw value for array properties
+                        if prop_name == "tags" and prop_value is not None:
+                            tags_raw_type = type(prop_value).__name__
+                            if isinstance(prop_value, str):
+                                tags_raw_repr = prop_value[:500]  # Truncate for display
+                            elif isinstance(prop_value, (list, dict)):
+                                import json
+                                tags_raw_repr = json.dumps(prop_value, ensure_ascii=False)[:500]
+                            else:
+                                tags_raw_repr = str(prop_value)[:500]
                         
-                        # Validate the created table
-                        expected_cols = len(self._arrow_schema())
-                        if len(debug_table.schema) != expected_cols:
-                            raise ValueError(
-                                f"CRITICAL: Created debug table has {len(debug_table.schema)} columns, "
-                                f"expected {expected_cols}"
-                            )
-                    except Exception as table_error:
-                        # If table creation fails, create error table with correct schema
-                        error_msg = f"CRITICAL: Failed to create debug table: {type(table_error).__name__}: {str(table_error)}"
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Fall back to empty table with correct schema
-                        debug_table = self._empty_record_batch().to_table()
-                        expected_cols = len(self._arrow_schema())
-                    
-                    # Always use Arrow mode - yield RecordBatches
-                    # CRITICAL: Wrap batch conversion in try-catch to prevent malformed batches
-                    try:
-                        batches = _arrow_table_to_record_batches(debug_table)
-                    except Exception as batch_conv_error:
-                        # If batch conversion fails, log and fall back to empty batch
-                        error_msg = f"CRITICAL: Failed to convert table to batches: {type(batch_conv_error).__name__}: {str(batch_conv_error)}"
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        # Fall back to empty batch
-                        yield self._empty_record_batch()
-                        return
-                    
-                    for batch in batches:
-                        # CRITICAL: Validate each batch has the correct schema
-                        if len(batch.schema) != expected_cols:
-                            raise ValueError(
-                                f"CRITICAL: RecordBatch has {len(batch.schema)} columns, expected {expected_cols}"
-                            )
-                        yield batch
-                    return
-                except Exception as critical_error:
-                    # If even the exception handler fails, fall back to empty RecordBatch with correct schema
-                    # This ensures we NEVER return a malformed RecordBatch
-                    critical_error_msg = f"CRITICAL: Exception handler failed: {type(critical_error).__name__}: {str(critical_error)}"
-                    sys.stderr.write(f"{critical_error_msg}\n")
-                    print(critical_error_msg)
-                    # Fall back to empty RecordBatch with correct schema
-                    yield self._empty_record_batch()
-                    return
-{% else %}
-            # Always use Arrow mode - yield empty RecordBatch
-            yield self._empty_record_batch()
+                        if prop_name == "aliases" and prop_value is not None:
+                            aliases_raw_type = type(prop_value).__name__
+                            if isinstance(prop_value, str):
+                                aliases_raw_repr = prop_value[:500]
+                            elif isinstance(prop_value, (list, dict)):
+                                import json
+                                aliases_raw_repr = json.dumps(prop_value, ensure_ascii=False)[:500]
+                            else:
+                                aliases_raw_repr = str(prop_value)[:500]
 {% endif %}
-        except Exception as ultra_critical:
-            # Last resort: if absolutely everything fails, return empty RecordBatch with correct schema
-            try:
-                import pyarrow as pa
-                import sys
-                
-                error_msg = f"ULTRA-CRITICAL: All error handlers failed: {type(ultra_critical).__name__}: {str(ultra_critical)}"
-                sys.stderr.write(f"{error_msg}\n")
-                print(error_msg)
-                
-                # Try to get the correct schema
-                schema = self._arrow_schema()
-                expected_cols = len(schema)
-                
-                # Create empty RecordBatch with correct schema
-                # CRITICAL: Wrap batch creation in try-catch to prevent malformed batches
-                try:
-                    empty_batch = pa.RecordBatch.from_arrays(
-                        [pa.array([], type=field.type) for field in schema], 
-                        schema=schema
-                    )
-                    
-                    # Validate the batch has correct schema
-                    if len(empty_batch.schema) != expected_cols:
-                        raise ValueError(
-                            f"ULTRA-CRITICAL: Empty batch has {len(empty_batch.schema)} columns, expected {expected_cols}"
-                        )
-                    
-                    yield empty_batch
-                    return
-                except Exception as batch_error:
-                    # If batch creation fails, try to create error batch
-                    error_msg = f"ULTRA-CRITICAL: Failed to create empty batch: {type(batch_error).__name__}: {str(batch_error)}"
-                    sys.stderr.write(f"{error_msg}\n")
-                    print(error_msg)
-                    # Fall through to final_failure handler
-                    raise
-                
-            except Exception as final_failure:
-                # If even creating empty batch fails, we're in serious trouble
-                # But we must yield something - create a batch with error info
-                try:
-                    import pyarrow as pa
-                    import sys
-                    
-                    final_error_msg = f"FINAL-FAILURE: Cannot create proper RecordBatch: {type(final_failure).__name__}: {str(final_failure)}"
-                    sys.stderr.write(f"{final_error_msg}\n")
-                    print(final_error_msg)
-                    
-                    # Try to get schema one more time
-                    try:
-                        schema = self._arrow_schema()
-                        expected_cols = len(schema)
+
+                        # Extract property value
+                        extracted_value = _extract_property_value_from_dict(prop_value) if prop_value is not None else None
                         
-                        # Create arrays for all expected columns (all empty with error message)
-                        arrays = []
-                        for field in schema:
-                            # Create array with single error message value
-                            arrays.append(pa.array([f"ERROR: {final_error_msg}"], type=field.type))
+{% if debug %}
+                        # Capture extracted value for array properties
+                        if prop_name == "tags" and extracted_value is not None:
+                            tags_extracted_type = type(extracted_value).__name__
+                            if isinstance(extracted_value, str):
+                                tags_extracted_repr = extracted_value[:500]
+                            elif isinstance(extracted_value, (list, dict)):
+                                import json
+                                tags_extracted_repr = json.dumps(extracted_value, ensure_ascii=False)[:500]
+                            else:
+                                tags_extracted_repr = str(extracted_value)[:500]
                         
-                        # Create batch with all columns
-                        # CRITICAL: Wrap batch creation in try-catch
-                        try:
-                            error_batch = pa.RecordBatch.from_arrays(arrays, schema=schema)
+                        if prop_name == "aliases" and extracted_value is not None:
+                            aliases_extracted_type = type(extracted_value).__name__
+                            if isinstance(extracted_value, str):
+                                aliases_extracted_repr = extracted_value[:500]
+                            elif isinstance(extracted_value, (list, dict)):
+                                import json
+                                aliases_extracted_repr = json.dumps(extracted_value, ensure_ascii=False)[:500]
+                            else:
+                                aliases_extracted_repr = str(extracted_value)[:500]
+{% endif %}
+
+                        # Normalize the value (handles arrays correctly)
+                        normalized_value = _normalize_value(prop_value, prop["spark_type"])
+                        
+{% if debug %}
+                        # Capture normalized value for array properties
+                        if prop_name == "tags" and normalized_value is not None:
+                            tags_normalized_type = type(normalized_value).__name__
+                            if isinstance(normalized_value, str):
+                                tags_normalized_repr = normalized_value[:500]
+                            elif isinstance(normalized_value, (list, dict)):
+                                import json
+                                tags_normalized_repr = json.dumps(normalized_value, ensure_ascii=False)[:500]
+                            else:
+                                tags_normalized_repr = str(normalized_value)[:500]
                             
-                            # Final validation
-                            if len(error_batch.schema) == expected_cols:
-                                yield error_batch
-                                return
-                        except Exception as batch_error:
-                            # If batch creation fails, log and fall through to minimal batch
-                            batch_error_msg = f"Failed to create error batch: {type(batch_error).__name__}: {str(batch_error)}"
-                            sys.stderr.write(f"{batch_error_msg}\n")
-                            print(batch_error_msg)
-                            # Fall through to minimal batch creation
-                    except Exception:
-                        pass
-                    
-                    # Absolute last resort: try to create batch with correct schema
-                    # CRITICAL: Never yield a batch with wrong schema
-                    try:
-                        # Try to get the correct schema one more time
-                        schema = self._arrow_schema()
-                        expected_cols = len(schema)
+                            # Build type transition string
+                            tags_types = f"{tags_raw_type} -> {tags_extracted_type} -> {tags_normalized_type}"
                         
-                        # Create arrays for all expected columns with error message
-                        arrays = []
-                        for field in schema:
-                            error_msg = f"CRITICAL: All error handlers failed. Original: {type(ultra_critical).__name__}"
-                            arrays.append(pa.array([error_msg], type=field.type))
-                        
-                        # Create batch with all columns
-                        error_batch = pa.RecordBatch.from_arrays(arrays, schema=schema)
-                        
-                        # Validate
-                        if len(error_batch.schema) == expected_cols:
-                            yield error_batch
-                            return
-                        else:
-                            # If validation fails, don't yield - just return empty iterator
-                            error_msg = f"CRITICAL: Cannot create batch with correct schema. Expected {expected_cols}, got {len(error_batch.schema)}"
-                            sys.stderr.write(f"{error_msg}\n")
-                            print(error_msg)
-                            return
-                    except Exception as minimal_error:
-                        # If even this fails, we're completely stuck
-                        minimal_error_msg = f"CRITICAL: Cannot create batch with correct schema: {type(minimal_error).__name__}: {str(minimal_error)}"
-                        sys.stderr.write(f"{minimal_error_msg}\n")
-                        print(minimal_error_msg)
-                        # Yield nothing (empty iterator) - Spark will handle this
-                        # This is better than yielding a batch with wrong schema
-                        return
-                    
-                except Exception:
-                    # If even this fails, we're completely stuck
-                    # Yield nothing (empty iterator) - Spark will handle this
-                    return
-
-    def _empty_record_batch(self) -> pa.RecordBatch:
-        """Create empty RecordBatch with correct schema."""
-        import pyarrow as pa
-        
-        try:
-            schema = self._arrow_schema()
-            expected_cols = len(schema)
-            
-            # CRITICAL: Wrap batch creation in try-catch to prevent malformed batches
-            try:
-                empty_batch = pa.RecordBatch.from_arrays(
-                    [pa.array([], type=field.type) for field in schema], 
-                    schema=schema
-                )
-                
-                # Validate the batch
-                if len(empty_batch.schema) != expected_cols:
-                    raise ValueError(
-                        f"CRITICAL: _empty_record_batch created batch with {len(empty_batch.schema)} columns, "
-                        f"expected {expected_cols}"
-                    )
-                
-                return empty_batch
-            except Exception as batch_error:
-                # If batch creation fails, log and fall through to minimal batch
-                error_msg = f"CRITICAL: Failed to create empty batch: {type(batch_error).__name__}: {str(batch_error)}"
-                sys.stderr.write(f"{error_msg}\n")
-                print(error_msg)
-                # Fall through to minimal batch creation
-                raise
-            
-        except Exception as e:
-            # If even this fails, try one more time with a different approach
-            import pyarrow as pa
-            try:
-                # Try to get schema again and create arrays for all fields
-                schema = self._arrow_schema()
-                expected_cols = len(schema)
-                
-                # Create arrays with error message for all fields
-                arrays = []
-                for field in schema:
-                    # Create array with single error message value
-                    error_msg = f"Error creating empty batch: {str(e)}"
-                    arrays.append(pa.array([error_msg], type=field.type))
-                
-                # Create batch with all columns
-                error_batch = pa.RecordBatch.from_arrays(arrays, schema=schema)
-                
-                # Validate
-                if len(error_batch.schema) != expected_cols:
-                    # If validation fails, raise instead of returning wrong schema
-                    raise ValueError(
-                        f"CRITICAL: Cannot create batch with correct schema. "
-                        f"Expected {expected_cols} columns, got {len(error_batch.schema)}"
-                    )
-                
-                return error_batch
-            except Exception as final_error:
-                # If we absolutely cannot create a batch with correct schema, raise
-                # This is better than returning a batch with wrong schema
-                raise RuntimeError(
-                    f"CRITICAL: Cannot create RecordBatch with correct schema. "
-                    f"Original error: {str(e)}, Final error: {str(final_error)}"
-                ) from e
-
-    def _arrow_schema(self) -> pa.Schema:
-        """Build Arrow schema from view properties."""
-        # Defensive import: ensure pyarrow is available (Unity Catalog execution context)
-        import pyarrow as pa
-        
-        fields = []
-{% for prop in properties %}
-        # {{ prop.name }}: {{ prop.spark_type }}
-        {% if "String" in prop.spark_type or "Array" in prop.spark_type %}
-        fields.append(pa.field("{{ prop.name }}", pa.string(), nullable=True))
-        {% elif "Long" in prop.spark_type or "Integer" in prop.spark_type %}
-        fields.append(pa.field("{{ prop.name }}", pa.int64(), nullable=True))
-        {% elif "Double" in prop.spark_type or "Float" in prop.spark_type %}
-        fields.append(pa.field("{{ prop.name }}", pa.float64(), nullable=True))
-        {% elif "Boolean" in prop.spark_type %}
-        fields.append(pa.field("{{ prop.name }}", pa.bool_(), nullable=True))
-        {% elif "Timestamp" in prop.spark_type %}
-        fields.append(pa.field("{{ prop.name }}", pa.timestamp('ms'), nullable=True))
-        {% else %}
-        fields.append(pa.field("{{ prop.name }}", pa.string(), nullable=True))
-        {% endif %}
-{% endfor %}
-        fields.append(pa.field("space", pa.string(), nullable=True))
-        fields.append(pa.field("external_id", pa.string(), nullable=True))
-{% if debug %}
-        # Add diagnostic columns when debug=True
-        fields.extend([
-            pa.field("_debug_auth_status", pa.string(), nullable=True),
-            pa.field("_debug_api_status", pa.string(), nullable=True),
-            pa.field("_debug_api_items_count", pa.int64(), nullable=True),
-            pa.field("_debug_execution_mode", pa.string(), nullable=True),
-            pa.field("_debug_rows_yielded", pa.int64(), nullable=True),
-            pa.field("_debug_error", pa.string(), nullable=True),
-            pa.field("_debug_schema_info", pa.string(), nullable=True),
-            pa.field("_debug_column_count", pa.int64(), nullable=True),
-            pa.field("_debug_column_names", pa.string(), nullable=True),
-        ])
+                        if prop_name == "aliases" and normalized_value is not None:
+                            aliases_normalized_type = type(normalized_value).__name__
+                            if isinstance(normalized_value, str):
+                                aliases_normalized_repr = normalized_value[:500]
+                            elif isinstance(normalized_value, (list, dict)):
+                                import json
+                                aliases_normalized_repr = json.dumps(normalized_value, ensure_ascii=False)[:500]
+                            else:
+                                aliases_normalized_repr = str(normalized_value)[:500]
+                            
+                            # Build type transition string
+                            aliases_types = f"{aliases_raw_type} -> {aliases_extracted_type} -> {aliases_normalized_type}"
 {% endif %}
-        return pa.schema(fields)
+                        row_values.append(normalized_value)
 
+                    row_values.append(item.get("space", None))
+                    row_values.append(item.get("externalId") or item.get("external_id", None))
+
+                    # Extract and convert timestamp fields (milliseconds to datetime)
+                    from datetime import datetime, timezone
+
+                    def ms_to_datetime(ms: int | None) -> datetime | None:
+                        """Convert milliseconds timestamp to datetime."""
+                        if ms is None:
+                            return None
+                        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+
+                    row_values.append(ms_to_datetime(item.get("createdTime")))
+                    row_values.append(ms_to_datetime(item.get("lastUpdatedTime")))
+                    row_values.append(ms_to_datetime(item.get("deletedTime")))
+
+{% if debug %}
+                    row_values.extend([
+                        "SUCCESS",
+                        str(response.status_code),
+                        len(items),
+                        "scalar",
+                        len(items),
+                        None,
+                        f"expected={len(properties_list) + 5},actual={len(properties_list) + 5}",
+                        len(properties_list) + 5,
+                        ",".join([p["name"] for p in properties_list] + ["space", "external_id", "createdTime", "lastUpdatedTime", "deletedTime"]),
+                        # Array debug columns
+                        tags_raw_repr,
+                        tags_extracted_repr,
+                        tags_normalized_repr,
+                        tags_types,
+                        aliases_raw_repr,
+                        aliases_extracted_repr,
+                        aliases_normalized_repr,
+                        aliases_types,
+                    ])
+{% endif %}
+                    yield tuple(row_values)
+
+                # Check for next page
+                next_cursor = response_data.get("nextCursor")
+                if next_cursor is None:
+                    break
+
+        except Exception as e:
+            error_info = f"[UDTF] x Error during scalar execution: {type(e).__name__}: {str(e)}"
+            sys.stderr.write(f"{error_info}\n")
+{% if debug %}
+            empty_row = [None] * ({{ properties|length }} + 2)
+            empty_row.extend([
+                None,
+                "ERROR",
+                None,
+                "scalar",
+                0,
+                f"{type(e).__name__}: {str(e)}",
+                "error_scalar_execution",
+                0,
+                "",
+                # Array debug columns (all None on error)
+                None,  # tags_raw
+                None,  # tags_extracted
+                None,  # tags_normalized
+                None,  # tags_types
+                None,  # aliases_raw
+                None,  # aliases_extracted
+                None,  # aliases_normalized
+                None,  # aliases_types
+            ])
+            yield tuple(empty_row)
+{% else %}
+            raise
+{% endif %}
+        return
     def _build_filter_json(self, filters: dict[str, object]) -> dict | None:
         """Build CDF API filter JSON from input parameters.
         
@@ -1291,8 +742,62 @@ class {{ view.external_id }}UDTF:
         Returns:
             CDF API filter JSON dict or None if no filters
         """
-        # Filter out None values
-        active_filters = {k: v for k, v in filters.items() if v is not None}
+        import json
+        from datetime import datetime, timezone
+
+        def _coerce_filter_value(value: object) -> object:
+            """Normalize filter values to SDK-like shapes (supports JSON list strings and datetime objects)."""
+            # Handle datetime objects (from SQL TIMESTAMP) - convert to ISO 8601
+            if hasattr(value, 'timestamp') or hasattr(value, 'isoformat'):
+                try:
+                    dt = value
+                    # Ensure it's timezone-aware and in UTC
+                    if hasattr(dt, 'tzinfo'):
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        else:
+                            dt = dt.astimezone(timezone.utc)
+                    # Convert to ISO 8601 format (CDF API expects ISO 8601 for datetime properties)
+                    if hasattr(dt, 'isoformat'):
+                        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                    else:
+                        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                except (AttributeError, TypeError):
+                    pass
+            
+            # Also check for datetime-like objects with year/month/day attributes
+            if hasattr(value, 'year') and hasattr(value, 'month') and hasattr(value, 'day'):
+                try:
+                    # Try to construct a datetime and convert
+                    if hasattr(value, 'hour'):
+                        dt = datetime(
+                            value.year, value.month, value.day,
+                            value.hour, value.minute, value.second,
+                            getattr(value, 'microsecond', 0)
+                        )
+                    else:
+                        dt = datetime(value.year, value.month, value.day)
+                    # Assume UTC if no timezone info
+                    if not hasattr(value, 'tzinfo') or value.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                except Exception:
+                    pass
+            
+            # Handle string values (JSON list strings)
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, list):
+                            return parsed
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+            return value
+
+        # Filter out None values and normalize list-like strings and datetime objects
+        active_filters = {k: _coerce_filter_value(v) for k, v in filters.items() if v is not None}
         
         if not active_filters:
             return None
@@ -1344,6 +849,9 @@ class {{ view.external_id }}UDTF:
 {% endfor %}
             StructField("space", StringType(), nullable=False),
             StructField("external_id", StringType(), nullable=False),
+            StructField("createdTime", TimestampType(), nullable=True),
+            StructField("lastUpdatedTime", TimestampType(), nullable=True),
+            StructField("deletedTime", TimestampType(), nullable=True),
         ]
 {% if debug %}
         # Add diagnostic columns when debug=True
@@ -1357,6 +865,15 @@ class {{ view.external_id }}UDTF:
             StructField("_debug_schema_info", StringType(), nullable=True),
             StructField("_debug_column_count", LongType(), nullable=True),
             StructField("_debug_column_names", StringType(), nullable=True),
+            # Array processing debug columns
+            StructField("_debug_tags_raw", StringType(), nullable=True),
+            StructField("_debug_tags_extracted", StringType(), nullable=True),
+            StructField("_debug_tags_normalized", StringType(), nullable=True),
+            StructField("_debug_tags_types", StringType(), nullable=True),
+            StructField("_debug_aliases_raw", StringType(), nullable=True),
+            StructField("_debug_aliases_extracted", StringType(), nullable=True),
+            StructField("_debug_aliases_normalized", StringType(), nullable=True),
+            StructField("_debug_aliases_types", StringType(), nullable=True),
         ])
 {% endif %}
         return StructType(fields)

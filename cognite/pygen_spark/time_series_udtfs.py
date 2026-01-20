@@ -4,10 +4,8 @@ These UDTFs provide access to CDF Time Series datapoints from Spark SQL,
 supporting both session-scoped and catalog-based registration modes.
 Works with any Spark cluster, not limited to Databricks.
 
-**Note**: This is a convenience module. For Arrow-based UDTFs with zero-copy
-performance, use the template-generated UDTFs from `generate_time_series_udtfs()`.
-The templates use `@udtf(useArrow=True)` and `pa.Array`/`pa.RecordBatch` for
-optimal performance.
+**Note**: This is a convenience module. For template-generated UDTFs,
+use `generate_time_series_udtfs()` which generates scalar-only UDTFs.
 """
 
 from __future__ import annotations

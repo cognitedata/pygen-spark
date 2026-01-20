@@ -120,7 +120,9 @@ class UDTFField:
 
         # Check connection definitions first (matching pygen-main's pattern)
         if isinstance(prop, MultiReverseDirectRelation):
-            return "ArrayType(StringType())"
+            # UC SQL registration rejects ARRAY type_json for relationship inputs.
+            # Represent multi-relations as JSON strings instead.
+            return "StringType()"
         elif isinstance(prop, SingleReverseDirectRelation):
             return "StringType()"
 
@@ -128,11 +130,10 @@ class UDTFField:
         if isinstance(prop, dm.MappedProperty):
             prop_type = prop.type
             if isinstance(prop_type, dm.DirectRelation):
-                # Check is_list to determine if it's multi or single (matching pygen-main's pattern)
+                # Represent multi relations as JSON strings to keep UC registration compatible.
                 if prop_type.is_list if hasattr(prop_type, "is_list") else False:
-                    return "ArrayType(StringType())"
-                else:
                     return "StringType()"
+                return "StringType()"
 
             # Handle primitive types from MappedProperty
             # Check if it's a list type
@@ -264,7 +265,8 @@ class UDTFField:
 
         # Check connection definitions first (matching pygen-main's pattern)
         if isinstance(prop, MultiReverseDirectRelation):
-            return ArrayType(StringType(), containsNull=True)
+            # Represent multi relations as JSON strings to keep UC registration compatible.
+            return StringType()
         elif isinstance(prop, SingleReverseDirectRelation):
             return StringType()
 
@@ -272,11 +274,10 @@ class UDTFField:
         if isinstance(prop, dm.MappedProperty):
             prop_type = prop.type
             if isinstance(prop_type, dm.DirectRelation):
-                # Check is_list to determine if it's multi or single (matching pygen-main's pattern)
+                # Represent multi relations as JSON strings to keep UC registration compatible.
                 if prop_type.is_list if hasattr(prop_type, "is_list") else False:
-                    return ArrayType(StringType(), containsNull=True)
-                else:
                     return StringType()
+                return StringType()
 
             # Handle primitive types from MappedProperty
             # Check if it's a list type
