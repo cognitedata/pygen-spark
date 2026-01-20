@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from jinja2 import Environment, PackageLoader, select_autoescape
-
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 # Import relationship types directly from views module (matching pygen-main's approach)
 # Short-term: Import from private API (required until pygen exports this)
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import MultiAPIGenerator  # type: ignore[import-untyped]
+from jinja2 import Environment, PackageLoader, select_autoescape
+
 from cognite.pygen_spark.fields import UDTFField
 
 if TYPE_CHECKING:
@@ -49,7 +49,6 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         self,
         view: View,
         include_analyze: bool = True,
-        debug: bool = False,
         use_udtf_decorator: bool = True,
     ) -> str:
         """Generate Python UDTF code for a View.
@@ -58,7 +57,6 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             view: View object from CDF Data Model
             include_analyze: If True, includes analyze() method (for session-scoped).
                             If False, omits analyze() (for Unity Catalog).
-            debug: If True, includes debug logging in generated code.
             use_udtf_decorator: If True, adds @udtf decorator to the class.
 
         Returns:
@@ -80,7 +78,6 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             view=view,
             properties=udtf_fields,  # Pass UDTFField objects (like pygen-main passes Field objects)
             include_analyze=include_analyze,  # Pass include_analyze to template
-            debug=debug,  # Pass debug flag to template
             use_udtf_decorator=use_udtf_decorator,
         )
 
@@ -94,7 +91,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             # If black is not available, just return the code as-is
             # This allows the code to work even if black is not installed
             pass
-        except Exception:
+        except (ValueError, SyntaxError, TypeError):
             # If formatting fails for any reason, return the code as-is
             # This prevents formatting errors from breaking code generation
             pass

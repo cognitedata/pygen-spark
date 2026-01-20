@@ -20,7 +20,6 @@ from cognite.pygen_spark.utils import (
 )
 
 __all__ = [
-    "__version__",
     "CDFConnectionConfig",
     "InstanceId",
     "SparkUDTFGenerator",
@@ -30,6 +29,7 @@ __all__ = [
     "UDTFField",
     "UDTFGenerationResult",
     "ViewSQLGenerationResult",
+    "__version__",
     "parse_instance_id",
     "parse_instance_ids",
     "to_udtf_function_name",

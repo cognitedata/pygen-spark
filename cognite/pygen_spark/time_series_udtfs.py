@@ -44,6 +44,7 @@ except ImportError:
     class TimestampType:  # type: ignore[no-redef]
         pass
 
+
 if TYPE_CHECKING:
     from cognite.client import CogniteClient
 

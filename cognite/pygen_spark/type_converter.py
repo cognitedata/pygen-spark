@@ -23,6 +23,7 @@ try:
         StringType,
         TimestampType,
     )
+
     # Check version after successful import
     _check_pyspark_version()
 except ImportError as e:

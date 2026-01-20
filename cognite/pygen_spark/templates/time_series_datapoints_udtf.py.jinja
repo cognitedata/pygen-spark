@@ -59,25 +59,6 @@ class TimeSeriesDatapointsUDTF:
             StructField("timestamp", TimestampType(), nullable=True),
             StructField("value", DoubleType(), nullable=True),
         ]
-{% if debug %}
-        # Add diagnostic columns when debug=True
-        fields.extend([
-            StructField("_debug_auth_status", StringType(), nullable=True),
-            StructField("_debug_api_status", StringType(), nullable=True),
-            StructField("_debug_api_items_count", LongType(), nullable=True),
-            StructField("_debug_execution_mode", StringType(), nullable=True),
-            StructField("_debug_rows_yielded", LongType(), nullable=True),
-            StructField("_debug_error", StringType(), nullable=True),
-            # Credential extraction debug columns
-            StructField("_debug_credential_types", StringType(), nullable=True),
-            StructField("_debug_credential_extracted", StringType(), nullable=True),
-            StructField("_debug_missing_credentials", StringType(), nullable=True),
-            # Token inspection debug column
-            StructField("_debug_token", StringType(), nullable=True),
-            # Protobuf parsing debug column
-            StructField("_debug_protobuf_info", StringType(), nullable=True),
-        ])
-{% endif %}
         return StructType(fields)
     
 {% if include_analyze %}
@@ -214,67 +195,10 @@ class TimeSeriesDatapointsUDTF:
                 import json
                 raise ImportError("Protobuf parser not available - use JSON fallback")
         
-{% if debug %}
-        # Define logging function that writes to Spark Log4j (visible in Databricks Log4j output)
-        import logging
+
+        # Import datetime and timezone for timestamp conversion
         from datetime import datetime, timezone
-        
-        # Configure Python logger to write to stderr (captured by Spark Log4j)
-        # This makes logs visible in Databricks Serverless SQL "Log4j output" section
-        _udtf_logger = logging.getLogger("cognite.udtf")
-        _udtf_logger.setLevel(logging.INFO)
-        # Remove existing handlers to avoid duplicates
-        _udtf_logger.handlers.clear()
-        # Create handler that writes to stderr (Spark captures this)
-        _stderr_handler = logging.StreamHandler(sys.stderr)
-        _stderr_handler.setLevel(logging.INFO)
-        # Format: timestamp + message
-        _formatter = logging.Formatter(fmt='%(asctime)s [UDTF-DEBUG] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-        _stderr_handler.setFormatter(_formatter)
-        _udtf_logger.addHandler(_stderr_handler)
-        # Prevent propagation to root logger
-        _udtf_logger.propagate = False
-        
-        def _write_debug_log(message: str) -> None:
-            """Write debug message to Spark Log4j (visible in Databricks Log4j output section)."""
-            try:
-                # Use Python logging which integrates with Spark's Log4j
-                _udtf_logger.info(message)
-                # Also try DBFS as fallback (if accessible)
-                try:
-                    import os
-                    dbfs_path = f"/dbfs/tmp/udtf_debug_{os.getpid()}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-                    with open(dbfs_path, "a", encoding="utf-8") as f:
-                        f.write(f"{datetime.now().isoformat()} {message}\n")
-                        f.flush()
-                except Exception:
-                    pass  # DBFS might not be accessible, that's okay
-            except Exception:
-                # Fallback to direct stderr write
-                try:
-                    sys.stderr.write(f"[UDTF-DEBUG] {message}\n")
-                    sys.stderr.flush()
-                except Exception:
-                    pass  # Silently fail if logging is not possible
-        
-        # Initialize debug tracking variables
-        debug_auth_status = None
-        debug_api_status = None
-        debug_api_items_count = None
-        debug_execution_mode = None
-        debug_rows_yielded = None
-        debug_error = None
-        debug_credential_types = None
-        debug_credential_extracted = None
-        debug_missing_credentials = None
-        debug_token = None
-        debug_protobuf_info = None
-        
-        _write_debug_log("[UDTF] eval() method called")
-{% else %}
-        # Import datetime and timezone for timestamp conversion (non-debug mode)
-        from datetime import datetime, timezone
-{% endif %}
+
         
         try:
             # Helper function to extract scalar from Python input
@@ -333,90 +257,9 @@ class TimeSeriesDatapointsUDTF:
             
             # Extract scalar values from Python inputs
             # Note: Don't check for None before extraction - SECRET() returns PySpark Column objects, not None
-{% if debug %}
-            # Debug logging for credential extraction
-            sys.stderr.write(f"[UDTF] DEBUG: Extracting credentials...\n")
-            sys.stderr.write(f"[UDTF] DEBUG: client_id type: {type(client_id).__name__}, hasattr('as_py'): {hasattr(client_id, 'as_py')}\n")
-            if hasattr(client_id, 'as_py'):
-                try:
-                    extracted_test = client_id.as_py()
-                    sys.stderr.write(f"[UDTF] DEBUG: client_id.as_py() type: {type(extracted_test).__name__}, value preview: {str(extracted_test)[:20] if extracted_test else 'None'}\n")
-                except Exception as e:
-                    sys.stderr.write(f"[UDTF] DEBUG: client_id.as_py() failed: {e}\n")
-{% endif %}
-            
-            client_id_str = _extract_scalar(client_id)
-            client_secret_str = _extract_scalar(client_secret)
-            tenant_id_str = _extract_scalar(tenant_id)
-            cdf_cluster_str = _extract_scalar(cdf_cluster)
-            project_str = _extract_scalar(project)
 
-{% if debug %}
-            # Debug logging for extracted credentials
-            sys.stderr.write(f"[UDTF] DEBUG: Extracted credentials:\n")
-            sys.stderr.write(f"  client_id_str: {type(client_id_str).__name__}, length: {len(str(client_id_str)) if client_id_str else 0}\n")
-            sys.stderr.write(f"  client_secret_str: {type(client_secret_str).__name__}, length: {len(str(client_secret_str)) if client_secret_str else 0}\n")
-            sys.stderr.write(f"  tenant_id_str: {tenant_id_str}\n")
-            sys.stderr.write(f"  cdf_cluster_str: {cdf_cluster_str}\n")
-            sys.stderr.write(f"  project_str: {project_str}\n")
-            
-            # Capture credential extraction details for debug columns
-            import json
-            credential_types = {
-                "client_id": type(client_id).__name__,
-                "client_secret": type(client_secret).__name__,
-                "tenant_id": type(tenant_id).__name__,
-                "cdf_cluster": type(cdf_cluster).__name__,
-                "project": type(project).__name__,
-            }
-            credential_extracted = {
-                "client_id": "extracted" if client_id_str else "None",
-                "client_secret": "extracted" if client_secret_str else "None",
-                "tenant_id": "extracted" if tenant_id_str else "None",
-                "cdf_cluster": "extracted" if cdf_cluster_str else "None",
-                "project": "extracted" if project_str else "None",
-            }
-            missing = []
-            if not client_id_str:
-                missing.append("client_id")
-            if not client_secret_str:
-                missing.append("client_secret")
-            if not tenant_id_str:
-                missing.append("tenant_id")
-            if not cdf_cluster_str:
-                missing.append("cdf_cluster")
-            if not project_str:
-                missing.append("project")
-            
-            debug_credential_types = json.dumps(credential_types)
-            debug_credential_extracted = json.dumps(credential_extracted)
-            debug_missing_credentials = ", ".join(missing) if missing else "none"
-{% endif %}
-
-            if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
-                error_msg = "Missing required credentials or configuration"
-                error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
                 yield (None, None)
-{% endif %}
+
                 return
             
             instance_id_str = _extract_scalar(instance_id)
@@ -424,26 +267,9 @@ class TimeSeriesDatapointsUDTF:
                 error_msg = "instance_id is required (format: 'space:external_id')"
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
+
                 yield (None, None)
-{% endif %}
+
                 return
             
             # Parse instance_id
@@ -451,26 +277,9 @@ class TimeSeriesDatapointsUDTF:
                 error_msg = f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'"
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
+
                 yield (None, None)
-{% endif %}
+
                 return
             
             space, external_id = instance_id_str.split(":", 1)
@@ -480,26 +289,9 @@ class TimeSeriesDatapointsUDTF:
                 error_msg = f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty."
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
+
                 yield (None, None)
-{% endif %}
+
                 return
             
             start_str = _extract_scalar(start) or "2w-ago"
@@ -524,26 +316,9 @@ class TimeSeriesDatapointsUDTF:
                     error_msg = f"Unknown aggregate '{aggregates_str}'"
                     error_category = "CONFIGURATION"
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                    debug_error = f"{error_category}: {error_msg}"
-                    yield (
-                        None,
-                        None,
-                        debug_auth_status,
-                        debug_api_status,
-                        debug_api_items_count,
-                        "scalar",
-                        0,
-                        debug_error,
-                        debug_credential_types,
-                        debug_credential_extracted,
-                        debug_missing_credentials,
-                        debug_token,
-                        debug_protobuf_info,
-                    )
-{% else %}
+
                     yield (None, None)
-{% endif %}
+
                     return
             
             # Convert start/end time to milliseconds (supports SQL TIMESTAMP, relative time, ISO 8601)
@@ -665,26 +440,9 @@ class TimeSeriesDatapointsUDTF:
                 error_msg = f"Invalid time format: {str(e)}"
                 error_category = "CONFIGURATION"
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
+
                 yield (None, None)
-{% endif %}
+
                 return
             
             # Get OAuth token (with caching)
@@ -701,62 +459,9 @@ class TimeSeriesDatapointsUDTF:
                     "access_token": token,
                     "expires_at": expires_at,
                 }
-{% if debug %}
-                # Log successful authentication (both stderr and stdout for Serverless SQL visibility)
-                auth_success = f"[UDTF] SUCCESS: authenticated with CDF (project: {project_str}, cluster: {cdf_cluster_str})"
-                sys.stderr.write(f"{auth_success}\n")
-                print(auth_success)  # Also print to stdout for Serverless SQL visibility
-                _write_debug_log(auth_success)
-                debug_auth_status = "SUCCESS"
-                
-                # Inspect token using CDF API
-                try:
-                    import json
-                    base_url = f"https://{cdf_cluster_str}.cognitedata.com"
-                    inspect_url = f"{base_url}/api/v1/token/inspect"
-                    inspect_headers = {
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    }
-                    inspect_response = requests.get(inspect_url, headers=inspect_headers, timeout=10)
-                    if inspect_response.status_code == 200:
-                        token_info = inspect_response.json()
-                        debug_token = json.dumps(token_info, indent=2)
-                        sys.stderr.write(f"[UDTF] DEBUG: Token inspection successful\n")
-                    else:
-                        debug_token = f"ERROR: {inspect_response.status_code} - {inspect_response.text[:200]}"
-                        sys.stderr.write(f"[UDTF] DEBUG: Token inspection failed: {debug_token}\n")
-                except Exception as e:
-                    debug_token = f"EXCEPTION: {type(e).__name__}: {str(e)[:200]}"
-                    sys.stderr.write(f"[UDTF] DEBUG: Token inspection exception: {debug_token}\n")
-{% endif %}
-            except Exception as e:
-                try:
-                    self._init_error_category = _classify_error(None, e)
-                except Exception:
-                    self._init_error_category = 'UNKNOWN'
-                self._init_error = f"{type(e).__name__}: {str(e)}"
-                sys.stderr.write(f"[UDTF] ✗ {self._init_error_category}: {self._init_error}\n")
-{% if debug %}
-                debug_error = f"{self._init_error_category}: {self._init_error}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
+
                 yield (None, None)
-{% endif %}
+
                 return
             
             try:
@@ -808,197 +513,23 @@ class TimeSeriesDatapointsUDTF:
                         accept_protobuf=True,  # Request protobuf response!
                     )
                     
-{% if debug %}
-                    # Log successful CDF query (both stderr and stdout for Serverless SQL visibility)
-                    query_success = f"[UDTF] SUCCESS: queried CDF API (status: {response.status_code}, content-type: {response.headers.get('content-type', 'unknown')})"
-                    sys.stderr.write(f"{query_success}\n")
-                    print(query_success)  # Also print to stdout for Serverless SQL visibility
-                    _write_debug_log(query_success)
-                    debug_api_status = str(response.status_code)
-{% endif %}
-                    
-                    # Check if response is protobuf
-                    content_type = response.headers.get('content-type', '').lower()
-                    is_protobuf = 'protobuf' in content_type or 'application/protobuf' in content_type
-                    
-                    if is_protobuf:
-                        # Parse protobuf response
-                        try:
-                            timestamps, values, protobuf_debug = _parse_protobuf_to_series(
-                                response.content,
-                                aggregates=aggregates_str,
-                            )
-{% if debug %}
-                            debug_protobuf_info = protobuf_debug
-{% endif %}
-                            sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from protobuf response\n")
-                        except Exception as protobuf_error:
-                            # Protobuf parsing failed, will trigger JSON fallback
-{% if debug %}
-                            import json
-                            debug_protobuf_info = json.dumps({
-                                "error": str(protobuf_error),
-                                "content_type": content_type,
-                                "response_size_bytes": len(response.content),
-                                "protobuf_available": False,
-                            })
-{% endif %}
-                            raise  # Re-raise to trigger JSON fallback
-                    else:
-                        # Fallback to JSON parsing
-                        sys.stderr.write(f"[UDTF] INFO: Response is JSON, not protobuf. Parsing as JSON...\n")
-{% if debug %}
-                        import json
-                        debug_protobuf_info = json.dumps({
-                            "response_format": "json",
-                            "content_type": content_type,
-                        })
-{% endif %}
-                        response_data = response.json()
-                        items = response_data.get("items", [])
-                        for item in items:
-                            datapoints = item.get("numericDatapoints", {}).get("datapoints", [])
-                            for dp in datapoints:
-                                timestamps.append(dp.get("timestamp", 0))
-                                values.append(dp.get("value", 0.0))
-                        sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from JSON response\n")
-                        
-                except Exception as parse_error:
-                    # If protobuf parsing fails, try JSON fallback
-                    sys.stderr.write(f"[UDTF] WARNING: Protobuf parsing failed: {parse_error}. Trying JSON fallback...\n")
-                    try:
-                        # Retry with JSON Accept header
-                        response = _make_request(
-                            method="POST",
-                            url=full_url,
-                            token=token,
-                            json_data=payload,
-                            timeout=30,
-                            accept_protobuf=False,  # Request JSON response
-                        )
-{% if debug %}
-                        import json
-                        debug_protobuf_info = json.dumps({
-                            "fallback_to_json": True,
-                            "protobuf_error": str(parse_error),
-                            "json_content_type": response.headers.get('content-type', 'unknown'),
-                        })
-{% endif %}
-                        response_data = response.json()
-                        items = response_data.get("items", [])
-                        for item in items:
-                            datapoints = item.get("numericDatapoints", {}).get("datapoints", [])
-                            for dp in datapoints:
-                                timestamps.append(dp.get("timestamp", 0))
-                                values.append(dp.get("value", 0.0))
-                        sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from JSON fallback\n")
-                    except Exception as json_error:
-                        error_msg = f"Failed to parse response (protobuf: {parse_error}, JSON: {json_error})"
-                        sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
-{% if debug %}
-                        import json
-                        debug_protobuf_info = json.dumps({
-                            "error": error_msg,
-                            "protobuf_error": str(parse_error),
-                            "json_error": str(json_error),
-                        })
-{% endif %}
-                        raise Exception(error_msg)
 
-                if not timestamps:
-                    sys.stderr.write(
-                        "[UDTF] WARNING: No datapoints found, yielding empty row to prevent 'end-of-input' error\n"
-                    )
-{% if debug %}
-                    debug_execution_mode = "scalar"
-                    debug_rows_yielded = 0
-                    debug_api_items_count = 0
-                    debug_error = "NO_DATA"
-                    yield (
-                        None,
-                        None,
-                        debug_auth_status,
-                        debug_api_status,
-                        debug_api_items_count,
-                        "scalar",
-                        0,
-                        debug_error,
-                        debug_credential_types,
-                        debug_credential_extracted,
-                        debug_missing_credentials,
-                        debug_token,
-                        debug_protobuf_info,
-                    )
-{% else %}
                     yield (None, None)
-{% endif %}
+
                     return
 
                 row_count = len(timestamps)
-{% if debug %}
-                debug_execution_mode = "scalar"
-                debug_rows_yielded = row_count
-                debug_api_items_count = row_count
-{% endif %}
 
-                for ts, val in zip(timestamps, values):
-                    timestamp_dt = (
-                        datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc) if ts is not None else None
-                    )
-{% if debug %}
-                    yield (
-                        timestamp_dt,
-                        val,
-                        debug_auth_status,
-                        debug_api_status,
-                        debug_api_items_count,
-                        "scalar",
-                        row_count,
-                        debug_error,
-                        debug_credential_types,
-                        debug_credential_extracted,
-                        debug_missing_credentials,
-                        debug_token,
-                        debug_protobuf_info,
-                    )
-{% else %}
                     yield (timestamp_dt, val)
-{% endif %}
+
 
                 # Log success (both stderr and stdout for Serverless SQL visibility)
                 success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
                 sys.stderr.write(f"{success_msg}\n")
                 print(success_msg)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-                _write_debug_log(success_msg)
-{% endif %}
-            except Exception as e:
-                # Log error for debugging (without traceback to avoid import issues)
-                # Both stderr and stdout for Serverless SQL visibility
-                error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}"
-                sys.stderr.write(error_info)
-                print(error_info)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-                _write_debug_log(error_info)
-                debug_error = f"{type(e).__name__}: {str(e)}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
+
                 yield (None, None)
-{% endif %}
+
                 return
                 
         except Exception as outer_error:
@@ -1007,26 +538,8 @@ class TimeSeriesDatapointsUDTF:
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n")
             print(error_info)  # Also print to stdout for Serverless SQL visibility
-{% if debug %}
-            _write_debug_log(error_info)
-            debug_error = f"{type(outer_error).__name__}: {str(outer_error)}"
-            yield (
-                None,
-                None,
-                None,  # debug_auth_status
-                None,  # debug_api_status
-                0,     # debug_api_items_count
-                "scalar",
-                0,     # debug_rows_yielded
-                debug_error,
-                None,  # debug_credential_types
-                None,  # debug_credential_extracted
-                None,  # debug_missing_credentials
-                None,  # debug_token
-                None,  # debug_protobuf_info
-            )
-{% else %}
+
             yield (None, None)
-{% endif %}
+
             return
 

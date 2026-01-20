@@ -44,7 +44,6 @@ class SparkUDTFGenerator(SDKGenerator):
         data_model: DataModel,
         top_level_package: str = "cognite_databricks",
         client_name: str = "CogniteDatabricksClient",
-        debug: bool = False,
         **kwargs: dict[str, object],
     ) -> None:
         """Initialize the Spark UDTF generator.
@@ -77,7 +76,6 @@ class SparkUDTFGenerator(SDKGenerator):
         # Store client and output_dir for later use
         self.client = client
         self.output_dir = output_dir
-        self.debug = debug  # Store debug flag for template generation
 
         # Create SparkMultiAPIGenerator with correct parameters matching MultiAPIGenerator signature
         # MultiAPIGenerator.__init__ requires:
@@ -146,14 +144,14 @@ class SparkUDTFGenerator(SDKGenerator):
         # Generate UDTF for each View (both versions)
         generated_files: dict[str, Path] = {}
         for view in views:
-            # Generate session-scoped version (without @udtf decorator and analyze() to avoid PySpark Connect circular import)
-            # The @udtf decorator and analyze method cause PySpark to import pyspark.sql.connect.udtf during serialization,
-            # which triggers a circular import bug in PySpark Connect. Removing them allows registration to work.
+            # Generate session-scoped version (without @udtf decorator and analyze())
+            # The @udtf decorator and analyze method cause PySpark to import
+            # pyspark.sql.connect.udtf during serialization, which triggers a circular
+            # import bug in PySpark Connect. Removing them allows registration to work.
             # The decorator will be applied during registration instead.
             udtf_code_session = self.udtf_generator.generate_udtf(
                 view,
                 include_analyze=False,  # Disabled to avoid circular import during serialization
-                debug=self.debug,
                 use_udtf_decorator=False,  # Disabled - will be applied during registration
             )
             file_path_session = self._write_udtf_file(view, udtf_code_session, subdirectory="session_scoped")
@@ -163,7 +161,6 @@ class SparkUDTFGenerator(SDKGenerator):
             udtf_code_catalog = self.udtf_generator.generate_udtf(
                 view,
                 include_analyze=True,
-                debug=self.debug,
                 use_udtf_decorator=False,
             )
             file_path_catalog = self._write_udtf_file(view, udtf_code_catalog, subdirectory="catalog_registered")
@@ -283,14 +280,16 @@ class SparkUDTFGenerator(SDKGenerator):
         for file_name, template_name in time_series_udtfs.items():
             template = self.udtf_generator.env.get_template(template_name)
 
-            # Generate session-scoped version (without @udtf decorator and analyze() to avoid PySpark Connect circular import)
-            # The @udtf decorator and analyze method cause PySpark to import pyspark.sql.connect.udtf during serialization,
-            # which triggers a circular import bug in PySpark Connect. Removing them allows registration to work.
+            # Generate session-scoped version (without @udtf decorator and analyze())
+            # The @udtf decorator and analyze method cause PySpark to import
+            # pyspark.sql.connect.udtf during serialization, which triggers a circular
+            # import bug in PySpark Connect. Removing them allows registration to work.
             # The decorator will be applied during registration instead.
-            code_session = template.render(include_analyze=False, debug=self.debug, use_udtf_decorator=False)
+            code_session = template.render(include_analyze=False, use_udtf_decorator=False)
             # Format with Black
             try:
                 import black
+
                 code_session = black.format_str(code_session, mode=black.Mode(line_length=120))
             except (ImportError, Exception):
                 pass
@@ -302,10 +301,11 @@ class SparkUDTFGenerator(SDKGenerator):
             generated_files[f"{file_name}_session"] = file_path_session
 
             # Generate catalog-registered version (with analyze() for UC validation)
-            code_catalog = template.render(include_analyze=True, debug=self.debug, use_udtf_decorator=False)
+            code_catalog = template.render(include_analyze=True, use_udtf_decorator=False)
             # Format with Black
             try:
                 import black
+
                 code_catalog = black.format_str(code_catalog, mode=black.Mode(line_length=120))
             except (ImportError, Exception):
                 pass
