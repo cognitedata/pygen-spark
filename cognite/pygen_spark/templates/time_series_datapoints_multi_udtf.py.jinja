@@ -1,9 +1,8 @@
-"""Auto-generated Time Series Datapoints UDTF for Cognite Data Fusion.
+"""Auto-generated Time Series Datapoints Multi UDTF for Cognite Data Fusion.
 
-This UDTF retrieves datapoints from a single Time Series using instance_id.
-Uses protobuf format with scalar UDTF execution for Unity Catalog SQL registration compatibility.
-Returns rows in format: (timestamp, value)
-Note: All datapoints come from the same time series, so space/external_id not needed per row.
+This UDTF retrieves datapoints from multiple Time Series using instance_id.
+Uses protobuf format with scalar execution for Unity Catalog SQL registration compatibility.
+Returns rows in format: (value, timestamp, status_code, status_symbol, external_id, space).
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from pyspark.sql.types import (
     TimestampType,
     StringType,
     DoubleType,
-    LongType,
+    IntegerType,
 )
 
 {% if use_udtf_decorator %}
@@ -32,13 +31,11 @@ from pyspark.sql.functions import udtf
 
 @udtf
 {% endif %}
-class TimeSeriesDatapointsUDTF:
-    """UDTF for retrieving datapoints from a single Time Series using instance_id.
+class TimeSeriesDatapointsMultiUDTF:
+    """UDTF for retrieving datapoints from multiple Time Series using instance_id.
     
-    Uses scalar UDTF execution with protobuf for Unity Catalog SQL registration compatibility.
-    Similar to client.time_series.data.retrieve() for a single time series.
-    Returns rows in format: (timestamp, value)
-    Note: All datapoints come from the same time series, so space/external_id not needed per row.
+    Uses scalar UDTF execution for Unity Catalog SQL registration compatibility.
+    Returns rows in format: (value, timestamp, status_code, status_symbol, external_id, space).
     """
     
     def __init__(self) -> None:
@@ -54,13 +51,18 @@ class TimeSeriesDatapointsUDTF:
     
     @staticmethod
     def outputSchema() -> StructType:
-        """Return the output schema: (timestamp, value)."""
+        """Return the output schema: (value, timestamp, status_code, status_symbol, external_id, space)."""
         fields = [
-            StructField("timestamp", TimestampType(), nullable=True),
             StructField("value", DoubleType(), nullable=True),
+            StructField("timestamp", TimestampType(), nullable=True),
+            StructField("status_code", IntegerType(), nullable=True),
+            StructField("status_symbol", StringType(), nullable=True),
+            StructField("external_id", StringType(), nullable=True),
+            StructField("space", StringType(), nullable=True),
         ]
 {% if debug %}
         # Add diagnostic columns when debug=True
+        from pyspark.sql.types import LongType
         fields.extend([
             StructField("_debug_auth_status", StringType(), nullable=True),
             StructField("_debug_api_status", StringType(), nullable=True),
@@ -88,16 +90,14 @@ class TimeSeriesDatapointsUDTF:
         tenant_id,
         cdf_cluster,
         project,
-        instance_id,
+        instance_ids,
         start,
         end,
         aggregates,
         granularity,
+        include_aggregate_name,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
-        
-        This method is used by PySpark Connect to validate arguments and determine output schema.
-        For Unity Catalog registration, this method is optional but harmless if present.
         
         Args:
             client_id: OAuth2 client ID column (required)
@@ -105,18 +105,13 @@ class TimeSeriesDatapointsUDTF:
             tenant_id: Azure AD tenant ID column (required)
             cdf_cluster: CDF cluster URL column (required)
             project: CDF project name column (required)
-            instance_id: Instance ID column in format "space:external_id" (required)
-            start: Start timestamp column (ISO 8601 or "2w-ago", "1d-ago", etc.)
-            end: End timestamp column (ISO 8601 or "now", "1d-ahead", etc.)
-            aggregates: Optional aggregate type column (e.g., "average", "max", "min", "count")
-            granularity: Optional granularity column for aggregates (e.g., "1h", "1d", "30s")
-        
-        Returns:
-            AnalyzeResult containing the output schema
+            instance_ids: Comma-separated list of instance IDs column (format: "space:external_id")
+            start, end, aggregates, granularity: Query parameter columns
+            include_aggregate_name: Whether to include aggregate name column (boolean)
         """
         # Lazy import to avoid circular import during serialization
         # Import from non-Connect module first to avoid circular import in pyspark.sql.connect.udtf
-        schema = TimeSeriesDatapointsUDTF.outputSchema()
+        schema = TimeSeriesDatapointsMultiUDTF.outputSchema()
         # Use __import__ with fromlist to avoid triggering circular import
         try:
             # Try non-Connect module first (avoids circular import in connect.udtf)
@@ -146,15 +141,16 @@ class TimeSeriesDatapointsUDTF:
         tenant_id: str | None = None,
         cdf_cluster: str | None = None,
         project: str | None = None,
-        instance_id: str | None = None,  # Format: "space:external_id"
+        instance_ids: str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2"
         start: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
         end: object | None = None,    # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
         aggregates: str | None = None,
         granularity: str | None = None,
+        include_aggregate_name: bool | None = None,
     ) -> Iterator[tuple]:
-        """Execute scalar UDTF using instance_id (space:external_id) for query.
+        """Retrieve Time Series datapoints with status using instance_id.
         
-        Uses protobuf format and scalar execution for Unity Catalog SQL registration compatibility.
+        Uses protobuf format with scalar execution for Unity Catalog SQL registration compatibility.
         
         Args:
             client_id: OAuth2 client ID (scalar)
@@ -162,19 +158,15 @@ class TimeSeriesDatapointsUDTF:
             tenant_id: Azure AD tenant ID (scalar)
             cdf_cluster: CDF cluster URL (scalar)
             project: CDF project name (scalar)
-            instance_id: Instance ID in format "space:external_id" (scalar)
+            instance_ids: Comma-separated list of instance IDs (scalar)
             start: Start timestamp (scalar)
             end: End timestamp (scalar)
             aggregates: Optional aggregate type (scalar)
             granularity: Optional granularity for aggregates (scalar)
-            client_id: OAuth2 client ID (scalar)
-            client_secret: OAuth2 client secret (scalar)
-            tenant_id: Azure AD tenant ID (scalar)
-            cdf_cluster: CDF cluster URL (scalar)
-            project: CDF project name (scalar)
+            include_aggregate_name: Whether to include aggregate name (scalar)
         
         Yields:
-            Tuples with (timestamp, value) columns
+            Tuples with (timestamp, time_series_external_id, value) columns
         """
         import sys
         
@@ -331,6 +323,18 @@ class TimeSeriesDatapointsUDTF:
                 except Exception:
                     return None
             
+            def _extract_bool(value) -> bool:
+                """Extract boolean value from Python input."""
+                scalar = _extract_scalar(value)
+                if scalar is None:
+                    return False
+                # Handle string representations of booleans
+                if isinstance(scalar, bool):
+                    return scalar
+                if isinstance(scalar, str):
+                    return scalar.lower() in ('true', '1', 'yes', 'on')
+                return bool(scalar)
+            
             # Extract scalar values from Python inputs
             # Note: Don't check for None before extraction - SECRET() returns PySpark Column objects, not None
 {% if debug %}
@@ -402,6 +406,10 @@ class TimeSeriesDatapointsUDTF:
                 yield (
                     None,
                     None,
+                    None,
+                    None,
+                    None,
+                    None,
                     debug_auth_status,
                     debug_api_status,
                     debug_api_items_count,
@@ -415,13 +423,13 @@ class TimeSeriesDatapointsUDTF:
                     debug_protobuf_info,
                 )
 {% else %}
-                yield (None, None)
+                yield (None, None, None, None, None, None)
 {% endif %}
                 return
             
-            instance_id_str = _extract_scalar(instance_id)
-            if not instance_id_str:
-                error_msg = "instance_id is required (format: 'space:external_id')"
+            instance_ids_str = _extract_scalar(instance_ids)
+            if not instance_ids_str:
+                error_msg = "instance_ids is required (format: 'space1:ext_id1,space2:ext_id2')"
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 {% if debug %}
@@ -429,32 +437,6 @@ class TimeSeriesDatapointsUDTF:
                 yield (
                     None,
                     None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
-                yield (None, None)
-{% endif %}
-                return
-            
-            # Parse instance_id
-            if ":" not in instance_id_str:
-                error_msg = f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'"
-                error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
                     None,
                     debug_auth_status,
                     debug_api_status,
@@ -469,36 +451,7 @@ class TimeSeriesDatapointsUDTF:
                     debug_protobuf_info,
                 )
 {% else %}
-                yield (None, None)
-{% endif %}
-                return
-            
-            space, external_id = instance_id_str.split(":", 1)
-            space = space.strip()
-            external_id = external_id.strip()
-            if not space or not external_id:
-                error_msg = f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty."
-                error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-{% if debug %}
-                debug_error = f"{error_category}: {error_msg}"
-                yield (
-                    None,
-                    None,
-                    debug_auth_status,
-                    debug_api_status,
-                    debug_api_items_count,
-                    "scalar",
-                    0,
-                    debug_error,
-                    debug_credential_types,
-                    debug_credential_extracted,
-                    debug_missing_credentials,
-                    debug_token,
-                    debug_protobuf_info,
-                )
-{% else %}
-                yield (None, None)
+                yield (None, None, None, None, None, None)
 {% endif %}
                 return
             
@@ -506,6 +459,7 @@ class TimeSeriesDatapointsUDTF:
             end_str = _extract_scalar(end) or "now"
             aggregates_str = _extract_scalar(aggregates)
             granularity_str = _extract_scalar(granularity)
+            include_aggregate_name_bool = _extract_bool(include_aggregate_name)
 
             if aggregates_str:
                 allowed_aggregates = {
@@ -529,6 +483,10 @@ class TimeSeriesDatapointsUDTF:
                     yield (
                         None,
                         None,
+                        None,
+                        None,
+                        None,
+                        None,
                         debug_auth_status,
                         debug_api_status,
                         debug_api_items_count,
@@ -542,9 +500,108 @@ class TimeSeriesDatapointsUDTF:
                         debug_protobuf_info,
                     )
 {% else %}
-                    yield (None, None)
+                    yield (None, None, None, None, None, None)
 {% endif %}
                     return
+            
+            # Parse instance_ids
+            node_ids = []
+            for instance_id_str in instance_ids_str.split(","):
+                instance_id_str = instance_id_str.strip()
+                if not instance_id_str:
+                    continue
+                if ":" not in instance_id_str:
+                    error_msg = f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'"
+                    error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+{% if debug %}
+                    debug_error = f"{error_category}: {error_msg}"
+                    yield (
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                        debug_credential_types,
+                        debug_credential_extracted,
+                        debug_missing_credentials,
+                        debug_token,
+                        debug_protobuf_info,
+                    )
+{% else %}
+                    yield (None, None, None, None, None, None)
+{% endif %}
+                    return
+                space, external_id = instance_id_str.split(":", 1)
+                space = space.strip()
+                external_id = external_id.strip()
+                if not space or not external_id:
+                    error_msg = f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty."
+                    error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+{% if debug %}
+                    debug_error = f"{error_category}: {error_msg}"
+                    yield (
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                        debug_credential_types,
+                        debug_credential_extracted,
+                        debug_missing_credentials,
+                        debug_token,
+                        debug_protobuf_info,
+                    )
+{% else %}
+                    yield (None, None, None, None, None, None)
+{% endif %}
+                    return
+                node_ids.append({"space": space, "externalId": external_id})
+            
+            if not node_ids:
+                error_msg = "At least one valid instance_id is required"
+                error_category = 'CONFIGURATION'
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+{% if debug %}
+                debug_error = f"{error_category}: {error_msg}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                    debug_credential_types,
+                    debug_credential_extracted,
+                    debug_missing_credentials,
+                    debug_token,
+                    debug_protobuf_info,
+                )
+{% else %}
+                yield (None, None, None, None, None, None)
+{% endif %}
+                return
             
             # Convert start/end time to milliseconds (supports SQL TIMESTAMP, relative time, ISO 8601)
             def timestamp_to_ms(timestamp: object) -> int:
@@ -670,6 +727,10 @@ class TimeSeriesDatapointsUDTF:
                 yield (
                     None,
                     None,
+                    None,
+                    None,
+                    None,
+                    None,
                     debug_auth_status,
                     debug_api_status,
                     debug_api_items_count,
@@ -683,7 +744,7 @@ class TimeSeriesDatapointsUDTF:
                     debug_protobuf_info,
                 )
 {% else %}
-                yield (None, None)
+                yield (None, None, None, None, None, None)
 {% endif %}
                 return
             
@@ -742,6 +803,10 @@ class TimeSeriesDatapointsUDTF:
                 yield (
                     None,
                     None,
+                    None,
+                    None,
+                    None,
+                    None,
                     debug_auth_status,
                     debug_api_status,
                     debug_api_items_count,
@@ -755,15 +820,18 @@ class TimeSeriesDatapointsUDTF:
                     debug_protobuf_info,
                 )
 {% else %}
-                yield (None, None)
+                yield (None, None, None, None, None, None)
 {% endif %}
                 return
             
             try:
                 # Log query start (both stderr and stdout for Serverless SQL visibility)
-                query_start = f"[UDTF] Querying time series: {space}:{external_id}"
+                query_start = f"[UDTF] Querying {len(node_ids)} time series (multi)"
                 sys.stderr.write(f"{query_start}\n")
                 print(query_start)  # Also print to stdout for Serverless SQL visibility
+{% if debug %}
+                _write_debug_log(query_start)
+{% endif %}
                 
                 # Make direct REST call to CDF API with protobuf
                 base_url = f"https://{cdf_cluster_str}.cognitedata.com"
@@ -771,24 +839,41 @@ class TimeSeriesDatapointsUDTF:
                 full_url = f"{base_url}{api_path}"
                 
                 # Build request payload (matching SDK format)
-                # start and end must be inside each item as milliseconds, not at top level
-                item_payload = {
-                    "instanceId": {
-                        "space": space,
-                        "externalId": external_id,
-                    },
-                    "start": start_ms,  # Milliseconds, inside item
-                    "end": end_ms,     # Milliseconds, inside item
-                    "limit": 100000,   # Match SDK default
-                    "cursor": None,    # Match SDK format
-                }
+                # Each item needs instanceId wrapper, start/end as milliseconds, limit, cursor
+                # Aggregates and granularity go at top level (same as time_series_datapoints_udtf)
+                # cursor: None is included even for initial request (matches SDK behavior)
+                items_payload = []
+                num_items = len(node_ids)
+                
+                # SDK distributes max limit across all items
+                # For aggregates: 10,000 total limit distributed across items
+                # For raw: 100,000 total limit distributed across items
+                if aggregates_str and granularity_str:
+                    max_limit = 10000  # SDK aggregate limit
+                    limit_per_item = max_limit // num_items
+                else:
+                    max_limit = 100000  # SDK raw limit
+                    limit_per_item = max_limit // num_items
+                
+                for node_id in node_ids:
+                    item_payload = {
+                        "instanceId": {
+                            "space": node_id["space"],
+                            "externalId": node_id["externalId"],
+                        },
+                        "start": start_ms,  # Milliseconds, inside item
+                        "end": end_ms,     # Milliseconds, inside item
+                        "limit": limit_per_item,  # Distributed limit per item
+                        "cursor": None,    # Match SDK format (included even for initial request)
+                    }
+                    items_payload.append(item_payload)
                 
                 payload = {
-                    "items": [item_payload],
+                    "items": items_payload,
                     "ignoreUnknownIds": True,  # SDK uses True for retrieve_arrays (ChunkingDpsFetcher)
                 }
                 
-                # Aggregates and granularity go at top level (not in item)
+                # Aggregates and granularity go at top level (same as time_series_datapoints_udtf)
                 if aggregates_str and granularity_str:
                     payload["aggregates"] = [aggregates_str]
                     payload["granularity"] = granularity_str
@@ -796,6 +881,40 @@ class TimeSeriesDatapointsUDTF:
                 # Try protobuf first, fallback to JSON if protobuf fails
                 timestamps: list[int] = []
                 values: list[float | str] = []
+                status_codes: list[int] = []
+                status_symbols: list[str] = []
+                external_ids: list[str] = []
+                spaces: list[str] = []
+
+                def _default_status() -> tuple[int, str]:
+                    return 0, "Good"
+
+                def _extract_status_from_proto(dp: object) -> tuple[int, str]:
+                    """Extract status from protobuf datapoint, defaulting to Good/0."""
+                    try:
+                        if hasattr(dp, "HasField") and dp.HasField("status"):
+                            status_code = dp.status.code
+                            status_symbol = dp.status.symbol or "Good"
+                            return status_code, status_symbol
+                    except Exception:
+                        pass
+                    try:
+                        status_code = dp.status.code
+                        status_symbol = dp.status.symbol or "Good"
+                        return status_code, status_symbol
+                    except Exception:
+                        return _default_status()
+
+                def _extract_status_from_json(dp: dict) -> tuple[int, str]:
+                    """Extract status from JSON datapoint, defaulting to Good/0."""
+                    status_obj = dp.get("status", {}) if isinstance(dp, dict) else {}
+                    status_code = status_obj.get("code", 0)
+                    status_symbol = status_obj.get("symbol", "Good")
+                    if status_code is None:
+                        status_code = 0
+                    if not status_symbol:
+                        status_symbol = "Good"
+                    return status_code, status_symbol
                 
                 try:
                     # Make request with protobuf Accept header
@@ -824,14 +943,81 @@ class TimeSeriesDatapointsUDTF:
                     if is_protobuf:
                         # Parse protobuf response
                         try:
-                            timestamps, values, protobuf_debug = _parse_protobuf_to_series(
-                                response.content,
-                                aggregates=aggregates_str,
-                            )
-{% if debug %}
-                            debug_protobuf_info = protobuf_debug
-{% endif %}
+                            protobuf_available, protobuf_classes = _get_protobuf_classes()
+                            if not protobuf_available:
+                                raise ImportError("Protobuf message definitions not available")
+                            
+                            DataPointListResponse = protobuf_classes["DataPointListResponse"]
+                            proto_response = DataPointListResponse()
+                            # Use MergeFromString to match SDK behavior
+                            proto_response.MergeFromString(response.content)
+                            
+                            # Extract datapoints from protobuf response
+                            for item in proto_response.items:
+                                if item.HasField('instanceId'):
+                                    instance_id_obj = item.instanceId
+                                    space = instance_id_obj.space
+                                    ext_id = instance_id_obj.externalId
+                                else:
+                                    space = ""
+                                    ext_id = item.externalId
+
+                                external_id = ext_id
+
+                                if item.HasField('numericDatapoints'):
+                                    for dp in item.numericDatapoints.datapoints:
+                                        timestamps.append(dp.timestamp)
+                                        values.append(dp.value)
+                                        status_code, status_symbol = _extract_status_from_proto(dp)
+                                        status_codes.append(status_code)
+                                        status_symbols.append(status_symbol)
+                                        external_ids.append(external_id)
+                                        spaces.append(space)
+                                elif item.HasField('aggregateDatapoints'):
+                                    for dp in item.aggregateDatapoints.datapoints:
+                                        timestamps.append(dp.timestamp)
+                                        if aggregates_str:
+                                            agg_name = aggregates_str.lower()
+                                            if agg_name == 'average':
+                                                values.append(dp.average)
+                                            elif agg_name == 'max':
+                                                values.append(dp.max)
+                                            elif agg_name == 'min':
+                                                values.append(dp.min)
+                                            elif agg_name == 'count':
+                                                values.append(float(dp.count))
+                                            elif agg_name == 'sum':
+                                                values.append(dp.sum)
+                                            else:
+                                                values.append(dp.average)
+                                        else:
+                                            values.append(dp.average)
+                                        status_code, status_symbol = _default_status()
+                                        status_codes.append(status_code)
+                                        status_symbols.append(status_symbol)
+                                        external_ids.append(external_id)
+                                        spaces.append(space)
+                                elif item.HasField('stringDatapoints'):
+                                    for dp in item.stringDatapoints.datapoints:
+                                        timestamps.append(dp.timestamp)
+                                        values.append(dp.value)
+                                        status_code, status_symbol = _extract_status_from_proto(dp)
+                                        status_codes.append(status_code)
+                                        status_symbols.append(status_symbol)
+                                        external_ids.append(external_id)
+                                        spaces.append(space)
+                            
                             sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from protobuf response\n")
+{% if debug %}
+                            import json
+                            debug_protobuf_info = json.dumps({
+                                "response_format": "protobuf",
+                                "content_type": content_type,
+                                "response_size_bytes": len(response.content),
+                                "items_count": len(proto_response.items),
+                                "datapoints_count": len(timestamps),
+                            })
+{% endif %}
                         except Exception as protobuf_error:
                             # Protobuf parsing failed, will trigger JSON fallback
 {% if debug %}
@@ -843,6 +1029,7 @@ class TimeSeriesDatapointsUDTF:
                                 "protobuf_available": False,
                             })
 {% endif %}
+                            sys.stderr.write(f"[UDTF] WARNING: Protobuf parsing failed: {protobuf_error}. Trying JSON fallback...\n")
                             raise  # Re-raise to trigger JSON fallback
                     else:
                         # Fallback to JSON parsing
@@ -857,12 +1044,123 @@ class TimeSeriesDatapointsUDTF:
                         response_data = response.json()
                         items = response_data.get("items", [])
                         for item in items:
-                            datapoints = item.get("numericDatapoints", {}).get("datapoints", [])
-                            for dp in datapoints:
-                                timestamps.append(dp.get("timestamp", 0))
-                                values.append(dp.get("value", 0.0))
+                            # Extract time series identifier
+                            if "instanceId" in item:
+                                instance_id_obj = item["instanceId"]
+                                space = instance_id_obj.get("space", "")
+                                ext_id = instance_id_obj.get("externalId", "")
+                            else:
+                                space = ""
+                                ext_id = item.get("externalId", "")
+                            
+                            external_id = ext_id
+                            
+                            # Parse numeric datapoints
+                            if "numericDatapoints" in item:
+                                datapoints = item["numericDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", 0.0))
+                                    status_code, status_symbol = _extract_status_from_json(dp)
+                                    status_codes.append(status_code)
+                                    status_symbols.append(status_symbol)
+                                    external_ids.append(external_id)
+                                    spaces.append(space)
+                            
+                            # Parse aggregate datapoints
+                            if "aggregateDatapoints" in item:
+                                datapoints = item["aggregateDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    if aggregates_str:
+                                        agg_name = aggregates_str.lower()
+                                        if agg_name == 'average':
+                                            values.append(dp.get("average", 0.0))
+                                        elif agg_name == 'max':
+                                            values.append(dp.get("max", 0.0))
+                                        elif agg_name == 'min':
+                                            values.append(dp.get("min", 0.0))
+                                        elif agg_name == 'count':
+                                            values.append(float(dp.get("count", 0)))
+                                        elif agg_name == 'sum':
+                                            values.append(dp.get("sum", 0.0))
+                                        else:
+                                            values.append(dp.get("average", 0.0))
+                                    else:
+                                        values.append(dp.get("average", 0.0))
+                                    status_code, status_symbol = _default_status()
+                                    status_codes.append(status_code)
+                                    status_symbols.append(status_symbol)
+                                    external_ids.append(external_id)
+                                    spaces.append(space)
+                            
+                            # Parse string datapoints
+                            if "stringDatapoints" in item:
+                                datapoints = item["stringDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", ""))
+                                    status_code, status_symbol = _extract_status_from_json(dp)
+                                    status_codes.append(status_code)
+                                    status_symbols.append(status_symbol)
+                                    external_ids.append(external_id)
+                                    spaces.append(space)
+                        
                         sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from JSON response\n")
                         
+                except requests.exceptions.HTTPError as http_error:
+                    # Capture API response body for 400 errors
+                    import json
+                    error_body = ""
+                    http_status = None
+                    response_headers = {}
+                    if http_error.response is not None:
+                        http_status = http_error.response.status_code
+                        response_headers = dict(http_error.response.headers)
+                        try:
+                            # Try to get response body - may have been consumed
+                            if hasattr(http_error.response, 'text'):
+                                error_body = http_error.response.text[:500]  # Limit length
+                            elif hasattr(http_error.response, 'content'):
+                                # Try content if text is not available
+                                try:
+                                    error_body = http_error.response.content.decode('utf-8', errors='ignore')[:500]
+                                except Exception:
+                                    error_body = str(http_error.response.content)[:500]
+                        except Exception as body_error:
+                            error_body = f"Failed to read response body: {body_error}"
+                    error_msg = f"API request failed: {http_error} (Status: {http_status}, Response: {error_body})"
+                    sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
+{% if debug %}
+                    # Include detailed error info in debug_error (response body and request payload)
+                    debug_error = json.dumps({
+                        "error": str(http_error),
+                        "http_status": http_status,
+                        "response_body": error_body,
+                        "response_headers": response_headers,
+                        "request_payload": json.dumps(payload)[:1000] if payload else None,
+                        "request_url": full_url,
+                    })
+                    yield (
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                        debug_credential_types,
+                        debug_credential_extracted,
+                        debug_missing_credentials,
+                        debug_token,
+                        debug_protobuf_info,
+                    )
+{% else %}
+                    yield (None, None, None, None, None, None)
+{% endif %}
+                    return
                 except Exception as parse_error:
                     # If protobuf parsing fails, try JSON fallback
                     sys.stderr.write(f"[UDTF] WARNING: Protobuf parsing failed: {parse_error}. Trying JSON fallback...\n")
@@ -887,11 +1185,126 @@ class TimeSeriesDatapointsUDTF:
                         response_data = response.json()
                         items = response_data.get("items", [])
                         for item in items:
-                            datapoints = item.get("numericDatapoints", {}).get("datapoints", [])
-                            for dp in datapoints:
-                                timestamps.append(dp.get("timestamp", 0))
-                                values.append(dp.get("value", 0.0))
+                            # Extract time series identifier
+                            if "instanceId" in item:
+                                instance_id_obj = item["instanceId"]
+                                space = instance_id_obj.get("space", "")
+                                ext_id = instance_id_obj.get("externalId", "")
+                            else:
+                                space = ""
+                                ext_id = item.get("externalId", "")
+                            
+                            external_id = ext_id
+                            
+                            # Parse numeric datapoints
+                            if "numericDatapoints" in item:
+                                datapoints = item["numericDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", 0.0))
+                                    status_code, status_symbol = _extract_status_from_json(dp)
+                                    status_codes.append(status_code)
+                                    status_symbols.append(status_symbol)
+                                    external_ids.append(external_id)
+                                    spaces.append(space)
+                            
+                            # Parse aggregate datapoints
+                            if "aggregateDatapoints" in item:
+                                datapoints = item["aggregateDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    if aggregates_str:
+                                        agg_name = aggregates_str.lower()
+                                        if agg_name == 'average':
+                                            values.append(dp.get("average", 0.0))
+                                        elif agg_name == 'max':
+                                            values.append(dp.get("max", 0.0))
+                                        elif agg_name == 'min':
+                                            values.append(dp.get("min", 0.0))
+                                        elif agg_name == 'count':
+                                            values.append(float(dp.get("count", 0)))
+                                        elif agg_name == 'sum':
+                                            values.append(dp.get("sum", 0.0))
+                                        else:
+                                            values.append(dp.get("average", 0.0))
+                                    else:
+                                        values.append(dp.get("average", 0.0))
+                                    status_code, status_symbol = _default_status()
+                                    status_codes.append(status_code)
+                                    status_symbols.append(status_symbol)
+                                    external_ids.append(external_id)
+                                    spaces.append(space)
+                            
+                            # Parse string datapoints
+                            if "stringDatapoints" in item:
+                                datapoints = item["stringDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", ""))
+                                    status_code, status_symbol = _extract_status_from_json(dp)
+                                    status_codes.append(status_code)
+                                    status_symbols.append(status_symbol)
+                                    external_ids.append(external_id)
+                                    spaces.append(space)
+                        
                         sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from JSON fallback\n")
+                    except requests.exceptions.HTTPError as json_http_error:
+                        # Capture API response body for 400 errors in JSON fallback
+                        import json
+                        error_body = ""
+                        http_status = None
+                        response_headers = {}
+                        if json_http_error.response is not None:
+                            http_status = json_http_error.response.status_code
+                            response_headers = dict(json_http_error.response.headers)
+                            try:
+                                # Try to get response body - may have been consumed
+                                if hasattr(json_http_error.response, 'text'):
+                                    error_body = json_http_error.response.text[:500]
+                                elif hasattr(json_http_error.response, 'content'):
+                                    # Try content if text is not available
+                                    try:
+                                        error_body = json_http_error.response.content.decode('utf-8', errors='ignore')[:500]
+                                    except Exception:
+                                        error_body = str(json_http_error.response.content)[:500]
+                            except Exception as body_error:
+                                error_body = f"Failed to read response body: {body_error}"
+                        error_msg = f"API request failed (JSON fallback): {json_http_error} (Status: {http_status}, Response: {error_body})"
+                        sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
+{% if debug %}
+                        # Include detailed error info in debug_error (response body and request payload)
+                        debug_error = json.dumps({
+                            "error": str(json_http_error),
+                            "protobuf_error": str(parse_error),
+                            "http_status": http_status,
+                            "response_body": error_body,
+                            "response_headers": response_headers,
+                            "request_payload": json.dumps(payload)[:1000] if payload else None,
+                            "request_url": full_url,
+                        })
+                        yield (
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            None,
+                            debug_auth_status,
+                            debug_api_status,
+                            debug_api_items_count,
+                            "scalar",
+                            0,
+                            debug_error,
+                            debug_credential_types,
+                            debug_credential_extracted,
+                            debug_missing_credentials,
+                            debug_token,
+                            debug_protobuf_info,
+                        )
+{% else %}
+                        yield (None, None, None, None, None, None)
+{% endif %}
+                        return
                     except Exception as json_error:
                         error_msg = f"Failed to parse response (protobuf: {parse_error}, JSON: {json_error})"
                         sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
@@ -912,25 +1325,28 @@ class TimeSeriesDatapointsUDTF:
 {% if debug %}
                     debug_execution_mode = "scalar"
                     debug_rows_yielded = 0
-                    debug_api_items_count = 0
                     debug_error = "NO_DATA"
                     yield (
-                        None,
-                        None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
                         debug_auth_status,
                         debug_api_status,
                         debug_api_items_count,
                         "scalar",
                         0,
                         debug_error,
-                        debug_credential_types,
-                        debug_credential_extracted,
-                        debug_missing_credentials,
-                        debug_token,
-                        debug_protobuf_info,
+                    debug_credential_types,
+                    debug_credential_extracted,
+                    debug_missing_credentials,
+                    debug_token,
+                    debug_protobuf_info,
                     )
 {% else %}
-                    yield (None, None)
+                    yield (None, None, None, None, None, None)
 {% endif %}
                     return
 
@@ -941,14 +1357,20 @@ class TimeSeriesDatapointsUDTF:
                 debug_api_items_count = row_count
 {% endif %}
 
-                for ts, val in zip(timestamps, values):
+                for ts, val, status_code, status_symbol, external_id, space in zip(
+                    timestamps, values, status_codes, status_symbols, external_ids, spaces
+                ):
                     timestamp_dt = (
                         datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc) if ts is not None else None
                     )
 {% if debug %}
                     yield (
-                        timestamp_dt,
                         val,
+                        timestamp_dt,
+                        status_code,
+                        status_symbol,
+                        external_id,
+                        space,
                         debug_auth_status,
                         debug_api_status,
                         debug_api_items_count,
@@ -962,16 +1384,16 @@ class TimeSeriesDatapointsUDTF:
                         debug_protobuf_info,
                     )
 {% else %}
-                    yield (timestamp_dt, val)
+                    yield (val, timestamp_dt, status_code, status_symbol, external_id, space)
 {% endif %}
 
-                # Log success (both stderr and stdout for Serverless SQL visibility)
                 success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
                 sys.stderr.write(f"{success_msg}\n")
                 print(success_msg)  # Also print to stdout for Serverless SQL visibility
 {% if debug %}
                 _write_debug_log(success_msg)
 {% endif %}
+
             except Exception as e:
                 # Log error for debugging (without traceback to avoid import issues)
                 # Both stderr and stdout for Serverless SQL visibility
@@ -982,6 +1404,10 @@ class TimeSeriesDatapointsUDTF:
                 _write_debug_log(error_info)
                 debug_error = f"{type(e).__name__}: {str(e)}"
                 yield (
+                    None,
+                    None,
+                    None,
+                    None,
                     None,
                     None,
                     debug_auth_status,
@@ -997,7 +1423,7 @@ class TimeSeriesDatapointsUDTF:
                     debug_protobuf_info,
                 )
 {% else %}
-                yield (None, None)
+                yield (None, None, None, None, None, None)
 {% endif %}
                 return
                 
@@ -1013,11 +1439,15 @@ class TimeSeriesDatapointsUDTF:
             yield (
                 None,
                 None,
-                None,  # debug_auth_status
-                None,  # debug_api_status
-                0,     # debug_api_items_count
+                None,
+                None,
+                None,
+                None,
+                debug_auth_status,
+                debug_api_status,
+                debug_api_items_count,
                 "scalar",
-                0,     # debug_rows_yielded
+                0,
                 debug_error,
                 None,  # debug_credential_types
                 None,  # debug_credential_extracted
@@ -1026,7 +1456,7 @@ class TimeSeriesDatapointsUDTF:
                 None,  # debug_protobuf_info
             )
 {% else %}
-            yield (None, None)
+            yield (None, None, None, None, None, None)
 {% endif %}
             return
 

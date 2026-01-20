@@ -1,7 +1,7 @@
 """Auto-generated Time Series Datapoints Long Format UDTF for Cognite Data Fusion.
 
 This UDTF retrieves datapoints from multiple Time Series in long format using instance_id.
-Uses protobuf format with Silver Standard Arrow pattern for zero-copy performance.
+Uses protobuf format with scalar execution for Unity Catalog SQL registration compatibility.
 Returns rows in format: (timestamp, time_series_external_id, value)
 Note: time_series_external_id is in format "space:external_id" to support time series from different spaces.
 
@@ -13,8 +13,6 @@ from __future__ import annotations
 import sys
 import traceback
 from typing import TYPE_CHECKING
-
-import pyarrow as pa
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -30,14 +28,15 @@ from pyspark.sql.types import (
     DoubleType,
 )
 
+{% if use_udtf_decorator %}
 from pyspark.sql.functions import udtf
 
-
-@udtf(useArrow=True)
+@udtf
+{% endif %}
 class TimeSeriesDatapointsLongUDTF:
     """UDTF for retrieving datapoints from multiple Time Series in long format using instance_id.
     
-    Uses vectorized Arrow UDTF (PySpark 4.0.0+) with protobuf for zero-copy performance.
+    Uses scalar UDTF execution for Unity Catalog SQL registration compatibility.
     Similar to client.time_series.data.retrieve_dataframe() but returns long format.
     Returns rows in format: (timestamp, time_series_external_id, value)
     Note: time_series_external_id is in format "space:external_id" to support time series from different spaces.
@@ -74,6 +73,12 @@ class TimeSeriesDatapointsLongUDTF:
             StructField("_debug_execution_mode", StringType(), nullable=True),
             StructField("_debug_rows_yielded", LongType(), nullable=True),
             StructField("_debug_error", StringType(), nullable=True),
+            # Credential extraction debug columns
+            StructField("_debug_credential_types", StringType(), nullable=True),
+            StructField("_debug_credential_extracted", StringType(), nullable=True),
+            StructField("_debug_missing_credentials", StringType(), nullable=True),
+            # Token inspection debug column
+            StructField("_debug_token", StringType(), nullable=True),
         ])
 {% endif %}
         return StructType(fields)
@@ -81,62 +86,89 @@ class TimeSeriesDatapointsLongUDTF:
 {% if include_analyze %}
     @staticmethod
     def analyze(
+        client_id,
+        client_secret,
+        tenant_id,
+        cdf_cluster,
+        project,
         instance_ids,
         start,
         end,
         aggregates,
         granularity,
         include_aggregate_name,
-        client_id,
-        client_secret,
-        tenant_id,
-        cdf_cluster,
-        project,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
         Args:
+            client_id: OAuth2 client ID column (required)
+            client_secret: OAuth2 client secret column (required)
+            tenant_id: Azure AD tenant ID column (required)
+            cdf_cluster: CDF cluster URL column (required)
+            project: CDF project name column (required)
             instance_ids: Comma-separated list of instance IDs column (format: "space:external_id")
             start, end, aggregates, granularity: Query parameter columns
             include_aggregate_name: Whether to include aggregate name column (boolean)
-            client_id, client_secret, tenant_id, cdf_cluster, project: OAuth credential columns
         """
-        from pyspark.sql.udtf import AnalyzeResult
-        return AnalyzeResult(TimeSeriesDatapointsLongUDTF.outputSchema())
+        # Lazy import to avoid circular import during serialization
+        # Import from non-Connect module first to avoid circular import in pyspark.sql.connect.udtf
+        schema = TimeSeriesDatapointsLongUDTF.outputSchema()
+        # Use __import__ with fromlist to avoid triggering circular import
+        try:
+            # Try non-Connect module first (avoids circular import in connect.udtf)
+            udtf_mod = __import__('pyspark.sql.udtf', fromlist=['AnalyzeResult'], level=0)
+            AnalyzeResult = getattr(udtf_mod, 'AnalyzeResult')
+            return AnalyzeResult(schema)
+        except (ImportError, AttributeError):
+            # Fallback: try to get from sys.modules if already loaded
+            import sys
+            if 'pyspark.sql.udtf' in sys.modules:
+                mod = sys.modules['pyspark.sql.udtf']
+                if hasattr(mod, 'AnalyzeResult'):
+                    return mod.AnalyzeResult(schema)
+            # Last resort: try connect module (may trigger circular import, but only when method is called)
+            try:
+                connect_mod = __import__('pyspark.sql.connect.udtf', fromlist=['AnalyzeResult'], level=0)
+                AnalyzeResult = getattr(connect_mod, 'AnalyzeResult')
+                return AnalyzeResult(schema)
+            except (ImportError, AttributeError):
+                raise ImportError("Could not import AnalyzeResult from pyspark.sql.udtf or pyspark.sql.connect.udtf")
 {% endif %}
     
     def eval(
         self,
-        instance_ids: pa.Array | str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2" (Type hint handles both Arrow and Scalar modes)
-        start: pa.Array | str | None = None,
-        end: pa.Array | str | None = None,
-        aggregates: pa.Array | str | None = None,
-        granularity: pa.Array | str | None = None,
-        include_aggregate_name: pa.Array | str | None = None,
-        client_id: pa.Array | str | None = None,
-        client_secret: pa.Array | str | None = None,
-        tenant_id: pa.Array | str | None = None,
-        cdf_cluster: pa.Array | str | None = None,
-        project: pa.Array | str | None = None,
-    ) -> Iterator[pa.RecordBatch]:
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        tenant_id: str | None = None,
+        cdf_cluster: str | None = None,
+        project: str | None = None,
+        instance_ids: str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2"
+        start: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
+        end: object | None = None,    # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
+        aggregates: str | None = None,
+        granularity: str | None = None,
+        include_aggregate_name: bool | None = None,
+    ) -> Iterator[tuple]:
         """Retrieve Time Series datapoints in long format using instance_id.
         
-        Uses protobuf format with Silver Standard Arrow pattern for zero-copy performance.
+        Uses protobuf format with scalar execution for Unity Catalog SQL registration compatibility.
         
         Args:
-            instance_ids: Comma-separated list of instance IDs (Arrow Array, extract scalar)
-            start: Start timestamp (Arrow Array, extract scalar)
-            end: End timestamp (Arrow Array, extract scalar)
-            aggregates: Optional aggregate type (Arrow Array, extract scalar)
-            granularity: Optional granularity for aggregates (Arrow Array, extract scalar)
-            include_aggregate_name: Whether to include aggregate name (Arrow Array, extract scalar)
-            client_id, client_secret, tenant_id, cdf_cluster, project: OAuth credentials (Arrow Arrays)
+            client_id: OAuth2 client ID (scalar)
+            client_secret: OAuth2 client secret (scalar)
+            tenant_id: Azure AD tenant ID (scalar)
+            cdf_cluster: CDF cluster URL (scalar)
+            project: CDF project name (scalar)
+            instance_ids: Comma-separated list of instance IDs (scalar)
+            start: Start timestamp (scalar)
+            end: End timestamp (scalar)
+            aggregates: Optional aggregate type (scalar)
+            granularity: Optional granularity for aggregates (scalar)
+            include_aggregate_name: Whether to include aggregate name (scalar)
         
         Yields:
-            Arrow RecordBatches with (timestamp, time_series_external_id, value) columns
+            Tuples with (timestamp, time_series_external_id, value) columns
         """
-        # Defensive import: ensure pyarrow is available (Unity Catalog execution context)
-        import pyarrow as pa
         import sys
         
         # CRITICAL: Define helper functions inside eval() for Unity Catalog compatibility
@@ -146,14 +178,39 @@ class TimeSeriesDatapointsLongUDTF:
         {% filter indent(8, first=True, blank=True) %}
         {% include '_http_client.py.jinja' %}
         {% endfilter %}
-        {% filter indent(8, first=True, blank=True) %}
-        {% include '_protobuf_parser.py.jinja' %}
-        {% endfilter %}
+        
+        # Initialize protobuf variables before including the parser
+        _PROTOBUF_AVAILABLE: bool | None = None
+        _PROTOBUF_CLASSES: dict[str, type] | None = None
+        
+        # Wrap protobuf parser include in try-except to catch initialization failures
+        try:
+            {% filter indent(12, first=True, blank=True) %}
+            {% include '_protobuf_parser.py.jinja' %}
+            {% endfilter %}
+        except Exception as protobuf_init_error:
+            # If protobuf parser initialization fails, set to unavailable and continue
+            _PROTOBUF_AVAILABLE = False
+            _PROTOBUF_CLASSES = None
+            sys.stderr.write(
+                f"[UDTF] WARNING: Protobuf parser initialization failed: {type(protobuf_init_error).__name__}: {protobuf_init_error}. Will use JSON fallback.\n"
+            )
+            # Define minimal dummy functions to prevent NameError
+            def _get_protobuf_classes() -> tuple[bool, dict[str, type]]:
+                """Dummy function when protobuf parser initialization fails."""
+                return False, {}
+            
+            def _parse_protobuf_to_series(
+                response_content: bytes, aggregates: str | None = None
+            ) -> tuple[list[int], list[float | str], str]:
+                """Dummy function when protobuf parser initialization fails."""
+                import json
+                raise ImportError("Protobuf parser not available - use JSON fallback")
         
 {% if debug %}
         # Define logging function that writes to Spark Log4j (visible in Databricks Log4j output)
         import logging
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         # Configure Python logger to write to stderr (captured by Spark Log4j)
         # This makes logs visible in Databricks Serverless SQL "Log4j output" section
@@ -200,49 +257,74 @@ class TimeSeriesDatapointsLongUDTF:
         debug_execution_mode = None
         debug_rows_yielded = None
         debug_error = None
+        debug_credential_types = None
+        debug_credential_extracted = None
+        debug_missing_credentials = None
+        debug_token = None
         
         _write_debug_log("[UDTF] eval() method called")
+{% else %}
+        # Import datetime and timezone for timestamp conversion (non-debug mode)
+        from datetime import datetime, timezone
 {% endif %}
         
         try:
-            # DETECT EXECUTION MODE (Arrow vs Scalar)
-            # More robust detection: check for Arrow array characteristics first
-            # If it doesn't have Arrow array methods, assume scalar mode
-            is_scalar_mode = False
-            if instance_ids is not None:
-                # Check if it's an Arrow array (has as_py method and is array-like)
-                if hasattr(instance_ids, 'as_py') and hasattr(instance_ids, '__len__'):
-                    # This is likely an Arrow array - use Arrow mode
-                    is_scalar_mode = False
-                else:
-                    # Not an Arrow array - assume scalar mode
-                    # This handles plain strings, SECRET() wrappers, etc.
-                    is_scalar_mode = True
-                    # Debug logging to help diagnose (both stderr and stdout for Serverless SQL visibility)
-                    debug_msg = f"[UDTF] Detected scalar mode (instance_ids type: {type(instance_ids).__name__})"
-                    sys.stderr.write(f"{debug_msg}\n")
-                    print(debug_msg)  # Also print to stdout for Serverless SQL visibility
-            
-            # Helper function to extract scalar from Arrow Array OR Scalar String (polyglot mode)
-            # Unity Catalog may pass Scalar Strings even with useArrow=True
-            def _extract_scalar(value) -> str | None:
-                """Extract scalar value from Arrow Array or Scalar String."""
+            # Helper function to extract scalar from Python input
+            def _extract_scalar(value: object | None) -> object | None:
+                """Extract scalar value from Python input (scalar mode).
+                
+                Handles various types that Unity Catalog SECRET() might return:
+                - PySpark Column objects (has as_py method)
+                - Datetime objects (from SQL TIMESTAMP)
+                - String values directly
+                - Bytes (SECRET might return bytes)
+                - Other types (converted to string)
+                """
                 if value is None:
                     return None
-                if is_scalar_mode:
-                    # Scalar mode: value is already a Python string
-                    return str(value) if value else None
-                else:
-                    # Arrow mode: value is pa.Array or pa.Scalar
-                    if hasattr(value, 'as_py'):
-                        if hasattr(value, '__len__') and len(value) > 0:
-                            return value[0].as_py()
-                        elif hasattr(value, 'as_py'):
-                            return value.as_py()
+                
+                # Handle PySpark Column objects (has as_py method)
+                if hasattr(value, "as_py"):
+                    try:
+                        result = value.as_py()
+                        # SECRET() might return bytes, convert to string
+                        if isinstance(result, bytes):
+                            return result.decode('utf-8')
+                        return result
+                    except Exception as e:
+                        # If as_py() fails, try to convert to string
+                        sys.stderr.write(f"[UDTF] WARNING: as_py() failed for {type(value).__name__}: {e}\n")
+                
+                # Handle datetime objects (from SQL TIMESTAMP) - preserve them!
+                # Check for datetime-like objects before converting to string
+                if hasattr(value, 'timestamp') or hasattr(value, 'isoformat') or hasattr(value, 'year'):
+                    # This is likely a datetime object - preserve it
+                    return value
+                
+                # Handle string directly
+                if isinstance(value, str):
+                    return value
+                
+                # Handle bytes (SECRET might return bytes)
+                if isinstance(value, bytes):
+                    try:
+                        return value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        sys.stderr.write(f"[UDTF] WARNING: Failed to decode bytes value\n")
+                        return None
+                
+                # Try to convert to string as fallback
+                try:
+                    str_value = str(value)
+                    # Don't return empty strings or "None" string
+                    if str_value and str_value.lower() != "none":
+                        return str_value
+                    return None
+                except Exception:
                     return None
             
             def _extract_bool(value) -> bool:
-                """Extract boolean value from Arrow Array or Scalar."""
+                """Extract boolean value from Python input."""
                 scalar = _extract_scalar(value)
                 if scalar is None:
                     return False
@@ -253,49 +335,165 @@ class TimeSeriesDatapointsLongUDTF:
                     return scalar.lower() in ('true', '1', 'yes', 'on')
                 return bool(scalar)
             
-            # Extract scalar values from Arrow Arrays OR Scalar Strings
-            if client_id is None:
-                error_msg = "Missing credentials: client_id is required"
-                error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                if is_scalar_mode:
-                    return  # Yield nothing (empty iterator)
-                else:
-                    yield self._empty_record_batch()
-                    return
+            # Extract scalar values from Python inputs
+            # Note: Don't check for None before extraction - SECRET() returns PySpark Column objects, not None
+{% if debug %}
+            # Debug logging for credential extraction
+            sys.stderr.write(f"[UDTF] DEBUG: Extracting credentials...\n")
+            sys.stderr.write(f"[UDTF] DEBUG: client_id type: {type(client_id).__name__}, hasattr('as_py'): {hasattr(client_id, 'as_py')}\n")
+            if hasattr(client_id, 'as_py'):
+                try:
+                    extracted_test = client_id.as_py()
+                    sys.stderr.write(f"[UDTF] DEBUG: client_id.as_py() type: {type(extracted_test).__name__}, value preview: {str(extracted_test)[:20] if extracted_test else 'None'}\n")
+                except Exception as e:
+                    sys.stderr.write(f"[UDTF] DEBUG: client_id.as_py() failed: {e}\n")
+{% endif %}
             
             client_id_str = _extract_scalar(client_id)
             client_secret_str = _extract_scalar(client_secret)
             tenant_id_str = _extract_scalar(tenant_id)
             cdf_cluster_str = _extract_scalar(cdf_cluster)
             project_str = _extract_scalar(project)
+
+{% if debug %}
+            # Debug logging for extracted credentials
+            sys.stderr.write(f"[UDTF] DEBUG: Extracted credentials:\n")
+            sys.stderr.write(f"  client_id_str: {type(client_id_str).__name__}, length: {len(str(client_id_str)) if client_id_str else 0}\n")
+            sys.stderr.write(f"  client_secret_str: {type(client_secret_str).__name__}, length: {len(str(client_secret_str)) if client_secret_str else 0}\n")
+            sys.stderr.write(f"  tenant_id_str: {tenant_id_str}\n")
+            sys.stderr.write(f"  cdf_cluster_str: {cdf_cluster_str}\n")
+            sys.stderr.write(f"  project_str: {project_str}\n")
             
+            # Capture credential extraction details for debug columns
+            import json
+            credential_types = {
+                "client_id": type(client_id).__name__,
+                "client_secret": type(client_secret).__name__,
+                "tenant_id": type(tenant_id).__name__,
+                "cdf_cluster": type(cdf_cluster).__name__,
+                "project": type(project).__name__,
+            }
+            credential_extracted = {
+                "client_id": "extracted" if client_id_str else "None",
+                "client_secret": "extracted" if client_secret_str else "None",
+                "tenant_id": "extracted" if tenant_id_str else "None",
+                "cdf_cluster": "extracted" if cdf_cluster_str else "None",
+                "project": "extracted" if project_str else "None",
+            }
+            missing = []
+            if not client_id_str:
+                missing.append("client_id")
+            if not client_secret_str:
+                missing.append("client_secret")
+            if not tenant_id_str:
+                missing.append("tenant_id")
+            if not cdf_cluster_str:
+                missing.append("cdf_cluster")
+            if not project_str:
+                missing.append("project")
+            
+            debug_credential_types = json.dumps(credential_types)
+            debug_credential_extracted = json.dumps(credential_extracted)
+            debug_missing_credentials = ", ".join(missing) if missing else "none"
+{% endif %}
+
             if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
                 error_msg = "Missing required credentials or configuration"
                 error_category = 'CONFIGURATION'
-                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                if is_scalar_mode:
-                    return  # Yield nothing (empty iterator)
-                else:
-                    yield self._empty_record_batch()
-                    return
+                sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
+{% if debug %}
+                debug_error = f"{error_category}: {error_msg}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                    debug_credential_types,
+                    debug_credential_extracted,
+                    debug_missing_credentials,
+                    debug_token,
+                )
+{% else %}
+                yield (None, None, None)
+{% endif %}
+                return
             
             instance_ids_str = _extract_scalar(instance_ids)
             if not instance_ids_str:
                 error_msg = "instance_ids is required (format: 'space1:ext_id1,space2:ext_id2')"
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                if is_scalar_mode:
-                    return  # Yield nothing (empty iterator)
-                else:
-                    yield self._empty_record_batch()
-                    return
+{% if debug %}
+                debug_error = f"{error_category}: {error_msg}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                    debug_credential_types,
+                    debug_credential_extracted,
+                    debug_missing_credentials,
+                    debug_token,
+                )
+{% else %}
+                yield (None, None, None)
+{% endif %}
+                return
             
             start_str = _extract_scalar(start) or "2w-ago"
             end_str = _extract_scalar(end) or "now"
             aggregates_str = _extract_scalar(aggregates)
             granularity_str = _extract_scalar(granularity)
             include_aggregate_name_bool = _extract_bool(include_aggregate_name)
+
+            if aggregates_str:
+                allowed_aggregates = {
+                    "average",
+                    "max",
+                    "min",
+                    "count",
+                    "sum",
+                    "interpolation",
+                    "stepinterpolation",
+                    "continuousvariance",
+                    "discretevariance",
+                    "totalvariation",
+                }
+                if aggregates_str.lower() not in allowed_aggregates:
+                    error_msg = f"Unknown aggregate '{aggregates_str}'"
+                    error_category = "CONFIGURATION"
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+{% if debug %}
+                    debug_error = f"{error_category}: {error_msg}"
+                    yield (
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                        debug_credential_types,
+                        debug_credential_extracted,
+                        debug_missing_credentials,
+                        debug_token,
+                    )
+{% else %}
+                    yield (None, None, None)
+{% endif %}
+                    return
             
             # Parse instance_ids
             node_ids = []
@@ -307,11 +505,23 @@ class TimeSeriesDatapointsLongUDTF:
                     error_msg = f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'"
                     error_category = 'CONFIGURATION'
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                    if is_scalar_mode:
-                        return  # Yield nothing (empty iterator)
-                    else:
-                        yield self._empty_record_batch()
-                        return
+{% if debug %}
+                    debug_error = f"{error_category}: {error_msg}"
+                    yield (
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                    )
+{% else %}
+                    yield (None, None, None)
+{% endif %}
+                    return
                 space, external_id = instance_id_str.split(":", 1)
                 space = space.strip()
                 external_id = external_id.strip()
@@ -319,30 +529,191 @@ class TimeSeriesDatapointsLongUDTF:
                     error_msg = f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty."
                     error_category = 'CONFIGURATION'
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                    if is_scalar_mode:
-                        return  # Yield nothing (empty iterator)
-                    else:
-                        yield self._empty_record_batch()
-                        return
+{% if debug %}
+                    debug_error = f"{error_category}: {error_msg}"
+                    yield (
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                    )
+{% else %}
+                    yield (None, None, None)
+{% endif %}
+                    return
                 node_ids.append({"space": space, "externalId": external_id})
             
             if not node_ids:
                 error_msg = "At least one valid instance_id is required"
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-                if is_scalar_mode:
-                    return  # Yield nothing (empty iterator)
-                else:
-                    yield self._empty_record_batch()
-                    return
+{% if debug %}
+                debug_error = f"{error_category}: {error_msg}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                )
+{% else %}
+                yield (None, None, None)
+{% endif %}
+                return
+            
+            # Convert start/end time to milliseconds (supports SQL TIMESTAMP, relative time, ISO 8601)
+            def timestamp_to_ms(timestamp: object) -> int:
+                """Convert timestamp to milliseconds since epoch.
+                
+                Supports:
+                - SQL TIMESTAMP types (datetime objects from Unity Catalog)
+                - Relative time strings: "2w-ago", "1d-ago", "now", "3d-ahead"
+                - ISO 8601 strings: "2024-01-01T00:00:00Z"
+                - SQL timestamp strings: "2024-01-01 00:00:00" (from SQL expressions)
+                - Milliseconds (int/float): already in milliseconds
+                """
+                import time
+                import re
+                from datetime import datetime, timezone
+                
+                # Handle None
+                if timestamp is None:
+                    raise ValueError("Timestamp cannot be None")
+                
+                # Handle datetime objects (from SQL TIMESTAMP)
+                # Check for datetime-like objects (has timestamp() method or datetime attributes)
+                if hasattr(timestamp, 'timestamp'):
+                    try:
+                        # datetime.datetime or similar object
+                        # Handle timezone-aware and timezone-naive datetimes
+                        if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is not None:
+                            # Timezone-aware: use timestamp() directly
+                            return int(timestamp.timestamp() * 1000)
+                        else:
+                            # Timezone-naive: assume UTC
+                            return int(timestamp.replace(tzinfo=timezone.utc).timestamp() * 1000)
+                    except (AttributeError, TypeError) as e:
+                        # If timestamp() fails, try other methods
+                        pass
+                
+                # Also check for datetime-like objects with year/month/day attributes
+                if hasattr(timestamp, 'year') and hasattr(timestamp, 'month') and hasattr(timestamp, 'day'):
+                    try:
+                        # Try to construct a datetime and convert
+                        if hasattr(timestamp, 'hour'):
+                            dt = datetime(
+                                timestamp.year, timestamp.month, timestamp.day,
+                                timestamp.hour, timestamp.minute, timestamp.second,
+                                getattr(timestamp, 'microsecond', 0)
+                            )
+                        else:
+                            dt = datetime(timestamp.year, timestamp.month, timestamp.day)
+                        # Assume UTC if no timezone info
+                        if not hasattr(timestamp, 'tzinfo') or timestamp.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        return int(dt.timestamp() * 1000)
+                    except Exception:
+                        pass
+                
+                # Handle int/float (milliseconds)
+                if isinstance(timestamp, (int, float)):
+                    return int(timestamp)
+                
+                # Handle string types
+                if isinstance(timestamp, str):
+                    # Handle "now"
+                    if timestamp.lower() == "now":
+                        return int(time.time() * 1000)
+                    
+                    # Handle relative time strings like "2w-ago", "1d-ago", "3d-ahead"
+                    # Pattern: (\d+)(s|m|h|d|w)-(ago|ahead)
+                    UNIT_IN_MS = {"s": 1000, "m": 60000, "h": 3600000, "d": 86400000, "w": 604800000}
+                    match = re.match(r"(\d+)([smhdw])-(ago|ahead)", timestamp.lower())
+                    if match:
+                        magnitude = int(match.group(1))
+                        unit = match.group(2)
+                        direction = match.group(3)
+                        ms_offset = magnitude * UNIT_IN_MS[unit]
+                        now_ms = int(time.time() * 1000)
+                        if direction == "ago":
+                            return now_ms - ms_offset
+                        else:  # ahead
+                            return now_ms + ms_offset
+                    
+                    # Try parsing as ISO 8601 datetime
+                    try:
+                        # Try various ISO 8601 and SQL timestamp formats
+                        for fmt in [
+                            "%Y-%m-%dT%H:%M:%S.%fZ",
+                            "%Y-%m-%dT%H:%M:%SZ",
+                            "%Y-%m-%dT%H:%M:%S",
+                            "%Y-%m-%d %H:%M:%S.%f",  # SQL timestamp with microseconds
+                            "%Y-%m-%d %H:%M:%S",     # SQL timestamp format
+                        ]:
+                            try:
+                                dt = datetime.strptime(timestamp, fmt)
+                                # Assume UTC if no timezone info
+                                if dt.tzinfo is None:
+                                    dt = dt.replace(tzinfo=timezone.utc)
+                                # Convert to milliseconds since epoch
+                                return int(dt.timestamp() * 1000)
+                            except ValueError:
+                                continue
+                    except Exception:
+                        pass
+                    
+                    # If we can't parse it, raise an error
+                    raise ValueError(
+                        f"Invalid timestamp format: '{timestamp}'. "
+                        "Supported formats: SQL TIMESTAMP, relative time (e.g., '2w-ago', 'now'), "
+                        "ISO 8601 (e.g., '2024-01-01T00:00:00Z'), SQL timestamp (e.g., '2024-01-01 00:00:00'), "
+                        "or milliseconds (int)"
+                    )
+                
+                raise TypeError(f"Timestamp must be datetime, str, int, or float, got {type(timestamp)}")
+            
+            # Convert start/end to milliseconds
+            try:
+                start_ms = timestamp_to_ms(start_str)
+                end_ms = timestamp_to_ms(end_str)
+            except (ValueError, TypeError) as e:
+                error_msg = f"Invalid time format: {str(e)}"
+                error_category = "CONFIGURATION"
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+{% if debug %}
+                debug_error = f"{error_category}: {error_msg}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                )
+{% else %}
+                yield (None, None, None)
+{% endif %}
+                return
             
             # Get OAuth token (with caching)
             try:
                 token, expires_at = _get_oauth_token(
-                    client_id_str,
-                    client_secret_str,
-                    tenant_id_str,
-                    cdf_cluster_str,
+                    str(client_id_str),
+                    str(client_secret_str),
+                    str(tenant_id_str),
+                    str(cdf_cluster_str),
                     self._token_cache,
                 )
                 # Cache token for next call
@@ -352,11 +723,32 @@ class TimeSeriesDatapointsLongUDTF:
                 }
 {% if debug %}
                 # Log successful authentication (both stderr and stdout for Serverless SQL visibility)
-                auth_success = f"[UDTF] ✓ Successfully authenticated with CDF (project: {project_str}, cluster: {cdf_cluster_str})"
+                auth_success = f"[UDTF] SUCCESS: authenticated with CDF (project: {project_str}, cluster: {cdf_cluster_str})"
                 sys.stderr.write(f"{auth_success}\n")
                 print(auth_success)  # Also print to stdout for Serverless SQL visibility
                 _write_debug_log(auth_success)
                 debug_auth_status = "SUCCESS"
+                
+                # Inspect token using CDF API
+                try:
+                    import json
+                    base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+                    inspect_url = f"{base_url}/api/v1/token/inspect"
+                    inspect_headers = {
+                        "Authorization": f"Bearer {token}",
+                        "Content-Type": "application/json",
+                    }
+                    inspect_response = requests.get(inspect_url, headers=inspect_headers, timeout=10)
+                    if inspect_response.status_code == 200:
+                        token_info = inspect_response.json()
+                        debug_token = json.dumps(token_info, indent=2)
+                        sys.stderr.write(f"[UDTF] DEBUG: Token inspection successful\n")
+                    else:
+                        debug_token = f"ERROR: {inspect_response.status_code} - {inspect_response.text[:200]}"
+                        sys.stderr.write(f"[UDTF] DEBUG: Token inspection failed: {debug_token}\n")
+                except Exception as e:
+                    debug_token = f"EXCEPTION: {type(e).__name__}: {str(e)[:200]}"
+                    sys.stderr.write(f"[UDTF] DEBUG: Token inspection exception: {debug_token}\n")
 {% endif %}
             except Exception as e:
                 try:
@@ -365,11 +757,23 @@ class TimeSeriesDatapointsLongUDTF:
                     self._init_error_category = 'UNKNOWN'
                 self._init_error = f"{type(e).__name__}: {str(e)}"
                 sys.stderr.write(f"[UDTF] ✗ {self._init_error_category}: {self._init_error}\n")
-                if is_scalar_mode:
-                    return  # Yield nothing (empty iterator)
-                else:
-                    yield self._empty_record_batch()
-                    return
+{% if debug %}
+                debug_error = f"{self._init_error_category}: {self._init_error}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                )
+{% else %}
+                yield (None, None, None)
+{% endif %}
+                return
             
             try:
                 # Log query start (both stderr and stdout for Serverless SQL visibility)
@@ -385,315 +789,455 @@ class TimeSeriesDatapointsLongUDTF:
                 api_path = f"/api/v1/projects/{project_str}/timeseries/data/list"
                 full_url = f"{base_url}{api_path}"
                 
-                # Build request payload
-                payload = {
-                    "items": node_ids,
-                    "start": start_str,
-                    "end": end_str,
-                }
+                # Build request payload (matching SDK format)
+                # Each item needs instanceId wrapper, start/end as milliseconds, limit, cursor
+                # aggregates and granularity go INSIDE each item (not at top level)
+                # cursor: None is included even for initial request (matches SDK behavior)
+                items_payload = []
+                num_items = len(node_ids)
                 
+                # SDK distributes max limit across all items
+                # For aggregates: 10,000 total limit distributed across items
+                # For raw: 100,000 total limit distributed across items
                 if aggregates_str and granularity_str:
-                    payload["aggregates"] = [aggregates_str]
-                    payload["granularity"] = granularity_str
+                    max_limit = 10000  # SDK aggregate limit
+                    limit_per_item = max_limit // num_items
+                else:
+                    max_limit = 100000  # SDK raw limit
+                    limit_per_item = max_limit // num_items
                 
-                # Make request with protobuf Accept header
-                response = _make_request(
-                    method="POST",
-                    url=full_url,
-                    token=token,
-                    json_data=payload,
-                    timeout=30,
-                    accept_protobuf=True,  # Request protobuf response!
-                )
+                for node_id in node_ids:
+                    item_payload = {
+                        "instanceId": {
+                            "space": node_id["space"],
+                            "externalId": node_id["externalId"],
+                        },
+                        "start": start_ms,  # Milliseconds, inside item
+                        "end": end_ms,     # Milliseconds, inside item
+                        "limit": limit_per_item,  # Distributed limit per item
+                        "cursor": None,    # Match SDK format (included even for initial request)
+                    }
+                    # Add aggregates and granularity INSIDE each item (not at top level)
+                    if aggregates_str and granularity_str:
+                        item_payload["aggregates"] = [aggregates_str]
+                        item_payload["granularity"] = granularity_str
+                    
+                    items_payload.append(item_payload)
                 
-{% if debug %}
-                # Log successful CDF query (both stderr and stdout for Serverless SQL visibility)
-                query_success = f"[UDTF] ✓ Successfully queried CDF API (status: {response.status_code})"
-                sys.stderr.write(f"{query_success}\n")
-                print(query_success)  # Also print to stdout for Serverless SQL visibility
-                _write_debug_log(query_success)
-                debug_api_status = str(response.status_code)
-{% endif %}
+                payload = {
+                    "items": items_payload,
+                    "ignoreUnknownIds": True,  # SDK uses True for retrieve_arrays (ChunkingDpsFetcher)
+                }
+                # NOTE: aggregates and granularity are NOT at top level - they're inside each item
                 
-                # Silver Standard: Parse protobuf response (lazy import)
-                protobuf_available, protobuf_classes = _get_protobuf_classes()
-                if not protobuf_available:
-                    sys.stderr.write("[UDTF] ✗ CONFIGURATION: Protobuf message definitions not available\n")
-                    if is_scalar_mode:
-                        return  # Yield nothing (empty iterator)
-                    else:
-                        yield self._empty_record_batch()
-                        return
-                
-                DataPointListResponse = protobuf_classes["DataPointListResponse"]
-                
-                # Convert HTTP response to Arrow BinaryArray (zero-copy pattern)
-                binary_array = pa.array([response.content], type=pa.binary())
-                
+                # Try protobuf first, fallback to JSON if protobuf fails
                 timestamps: list[int] = []
                 values: list[float | str] = []
                 ts_external_ids: list[str] = []
                 
-                # Silver Standard: Loop through Arrow array, parse each message
-                for bytes_val in binary_array:
-                    if bytes_val is not None:
-                        # The heavy lifting: Python parsing from Arrow
-                        proto_response = DataPointListResponse()
+                try:
+                    # Make request with protobuf Accept header
+                    response = _make_request(
+                        method="POST",
+                        url=full_url,
+                        token=token,
+                        json_data=payload,
+                        timeout=30,
+                        accept_protobuf=True,  # Request protobuf response!
+                    )
+                    
+{% if debug %}
+                    # Log successful CDF query (both stderr and stdout for Serverless SQL visibility)
+                    query_success = f"[UDTF] SUCCESS: queried CDF API (status: {response.status_code}, content-type: {response.headers.get('content-type', 'unknown')})"
+                    sys.stderr.write(f"{query_success}\n")
+                    print(query_success)  # Also print to stdout for Serverless SQL visibility
+                    _write_debug_log(query_success)
+                    debug_api_status = str(response.status_code)
+{% endif %}
+                    
+                    # Check if response is protobuf
+                    content_type = response.headers.get('content-type', '').lower()
+                    is_protobuf = 'protobuf' in content_type or 'application/protobuf' in content_type
+                    
+                    if is_protobuf:
+                        # Parse protobuf response
                         try:
-                            proto_response.ParseFromString(bytes_val.as_py())
-                        except Exception as e:
-                            sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: Failed to parse protobuf: {e}\n")
-                            continue
-                        
-                        # Extract datapoints from protobuf message (multiple time series)
-                        for item in proto_response.items:
-                            # Get time series identifier from instanceId
-                            if item.HasField('instanceId'):
-                                instance_id_obj = item.instanceId
-                                space = instance_id_obj.space
-                                ext_id = instance_id_obj.externalId
+                            protobuf_available, protobuf_classes = _get_protobuf_classes()
+                            if not protobuf_available:
+                                raise ImportError("Protobuf message definitions not available")
+                            
+                            DataPointListResponse = protobuf_classes["DataPointListResponse"]
+                            proto_response = DataPointListResponse()
+                            # Use MergeFromString to match SDK behavior
+                            proto_response.MergeFromString(response.content)
+                            
+                            # Extract datapoints from protobuf response
+                            for item in proto_response.items:
+                                if item.HasField('instanceId'):
+                                    instance_id_obj = item.instanceId
+                                    space = instance_id_obj.space
+                                    ext_id = instance_id_obj.externalId
+                                else:
+                                    space = ""
+                                    ext_id = item.externalId
+
+                                ts_external_id = f"{space}:{ext_id}" if space and ext_id else ext_id
+                                if aggregates_str and include_aggregate_name_bool:
+                                    ts_external_id = f"{ts_external_id}|{aggregates_str.lower()}"
+
+                                if item.HasField('numericDatapoints'):
+                                    for dp in item.numericDatapoints.datapoints:
+                                        timestamps.append(dp.timestamp)
+                                        values.append(dp.value)
+                                        ts_external_ids.append(ts_external_id)
+                                elif item.HasField('aggregateDatapoints'):
+                                    for dp in item.aggregateDatapoints.datapoints:
+                                        timestamps.append(dp.timestamp)
+                                        if aggregates_str:
+                                            agg_name = aggregates_str.lower()
+                                            if agg_name == 'average':
+                                                values.append(dp.average)
+                                            elif agg_name == 'max':
+                                                values.append(dp.max)
+                                            elif agg_name == 'min':
+                                                values.append(dp.min)
+                                            elif agg_name == 'count':
+                                                values.append(float(dp.count))
+                                            elif agg_name == 'sum':
+                                                values.append(dp.sum)
+                                            else:
+                                                values.append(dp.average)
+                                        else:
+                                            values.append(dp.average)
+                                        ts_external_ids.append(ts_external_id)
+                                elif item.HasField('stringDatapoints'):
+                                    for dp in item.stringDatapoints.datapoints:
+                                        timestamps.append(dp.timestamp)
+                                        values.append(dp.value)
+                                        ts_external_ids.append(ts_external_id)
+                            
+                            sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from protobuf response\n")
+                        except Exception as protobuf_error:
+                            # Protobuf parsing failed, will trigger JSON fallback
+                            sys.stderr.write(f"[UDTF] WARNING: Protobuf parsing failed: {protobuf_error}. Trying JSON fallback...\n")
+                            raise  # Re-raise to trigger JSON fallback
+                    else:
+                        # Fallback to JSON parsing
+                        sys.stderr.write(f"[UDTF] INFO: Response is JSON, not protobuf. Parsing as JSON...\n")
+                        response_data = response.json()
+                        items = response_data.get("items", [])
+                        for item in items:
+                            # Extract time series identifier
+                            if "instanceId" in item:
+                                instance_id_obj = item["instanceId"]
+                                space = instance_id_obj.get("space", "")
+                                ext_id = instance_id_obj.get("externalId", "")
                             else:
-                                # Fallback to externalId field (legacy format)
                                 space = ""
-                                ext_id = item.externalId
+                                ext_id = item.get("externalId", "")
                             
                             ts_external_id = f"{space}:{ext_id}" if space and ext_id else ext_id
-                            
-                            # Optionally include aggregate name
                             if aggregates_str and include_aggregate_name_bool:
                                 ts_external_id = f"{ts_external_id}|{aggregates_str.lower()}"
                             
-                            if item.HasField('numericDatapoints'):
-                                # Raw numeric datapoints
-                                for dp in item.numericDatapoints.datapoints:
-                                    timestamps.append(dp.timestamp)
-                                    values.append(dp.value)
+                            # Parse numeric datapoints
+                            if "numericDatapoints" in item:
+                                datapoints = item["numericDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", 0.0))
                                     ts_external_ids.append(ts_external_id)
                             
-                            elif item.HasField('aggregateDatapoints'):
-                                # Aggregate datapoints
-                                for dp in item.aggregateDatapoints.datapoints:
-                                    timestamps.append(dp.timestamp)
-                                    
-                                    # Extract aggregate value
+                            # Parse aggregate datapoints
+                            if "aggregateDatapoints" in item:
+                                datapoints = item["aggregateDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
                                     if aggregates_str:
                                         agg_name = aggregates_str.lower()
                                         if agg_name == 'average':
-                                            values.append(dp.average)
+                                            values.append(dp.get("average", 0.0))
                                         elif agg_name == 'max':
-                                            values.append(dp.max)
+                                            values.append(dp.get("max", 0.0))
                                         elif agg_name == 'min':
-                                            values.append(dp.min)
+                                            values.append(dp.get("min", 0.0))
                                         elif agg_name == 'count':
-                                            values.append(float(dp.count))
+                                            values.append(float(dp.get("count", 0)))
                                         elif agg_name == 'sum':
-                                            values.append(dp.sum)
+                                            values.append(dp.get("sum", 0.0))
                                         else:
-                                            values.append(dp.average)
+                                            values.append(dp.get("average", 0.0))
                                     else:
-                                        values.append(dp.average)
-                                    
+                                        values.append(dp.get("average", 0.0))
                                     ts_external_ids.append(ts_external_id)
                             
-                            elif item.HasField('stringDatapoints'):
-                                # String datapoints
-                                for dp in item.stringDatapoints.datapoints:
-                                    timestamps.append(dp.timestamp)
-                                    values.append(dp.value)
+                            # Parse string datapoints
+                            if "stringDatapoints" in item:
+                                datapoints = item["stringDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", ""))
                                     ts_external_ids.append(ts_external_id)
-                
-                # Build Arrow arrays
-                if not timestamps:
-                    # Return empty appropriate to mode
-                    if is_scalar_mode:
-                        return  # Yield nothing (empty iterator)
-                    else:
-                        yield self._empty_record_batch()
-                        return
-                
-                # Convert timestamps (int64 milliseconds) to Arrow timestamp arrays
-                timestamp_array = pa.array(timestamps, type=pa.timestamp('ms'))
-                
-                # Determine value type
-                if values and isinstance(values[0], str):
-                    value_array = pa.array(values, type=pa.string())
-                else:
-                    value_array = pa.array(values, type=pa.float64())
-                
-                ts_external_id_array = pa.array(ts_external_ids, type=pa.string())
-                
-                # Create base schema (value type is dynamic - string or float64)
-                base_schema = pa.schema([
-                    pa.field("timestamp", pa.timestamp('ms'), nullable=True),
-                    pa.field("time_series_external_id", pa.string(), nullable=True),
-                    pa.field("value", value_array.type, nullable=True),
-                ])
-                
-                arrow_table = pa.Table.from_arrays(
-                    [timestamp_array, ts_external_id_array, value_array],
-                    schema=base_schema
-                )
-                
+                        
+                        sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from JSON response\n")
+                        
+                except requests.exceptions.HTTPError as http_error:
+                    # Capture API response body for 400 errors
+                    import json
+                    error_body = ""
+                    http_status = None
+                    response_headers = {}
+                    if http_error.response is not None:
+                        http_status = http_error.response.status_code
+                        response_headers = dict(http_error.response.headers)
+                        try:
+                            # Try to get response body - may have been consumed
+                            if hasattr(http_error.response, 'text'):
+                                error_body = http_error.response.text[:500]  # Limit length
+                            elif hasattr(http_error.response, 'content'):
+                                # Try content if text is not available
+                                try:
+                                    error_body = http_error.response.content.decode('utf-8', errors='ignore')[:500]
+                                except Exception:
+                                    error_body = str(http_error.response.content)[:500]
+                        except Exception as body_error:
+                            error_body = f"Failed to read response body: {body_error}"
+                    error_msg = f"API request failed: {http_error} (Status: {http_status}, Response: {error_body})"
+                    sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
 {% if debug %}
-                # Add debug columns to the arrow table
-                num_rows = arrow_table.num_rows
-                
-                # CRITICAL: If there are 0 data rows, create a single debug row to show what happened
-                if num_rows == 0:
-                    # Create a single row with NULL data columns but populated debug columns
-                    # Schema: (timestamp, time_series_external_id, value)
-                    empty_data_cols = [
-                        pa.array([None], type=pa.timestamp('ms')),  # timestamp as NULL
-                        pa.array([None], type=pa.string()),         # time_series_external_id as NULL
-                        pa.array([None], type=pa.float64()),         # value as NULL (or string, but float64 is default)
-                    ]
-                    
-                    # Debug columns with actual values
-                    debug_cols = {
-                        "_debug_auth_status": pa.array([debug_auth_status], type=pa.string()),
-                        "_debug_api_status": pa.array([debug_api_status], type=pa.string()),
-                        "_debug_api_items_count": pa.array([debug_api_items_count], type=pa.int64()),
-                        "_debug_execution_mode": pa.array([('scalar' if is_scalar_mode else 'arrow')], type=pa.string()),
-                        "_debug_rows_yielded": pa.array([0], type=pa.int64()),
-                        "_debug_error": pa.array([debug_error], type=pa.string()),
-                    }
-                    
-                    # Get full schema with debug columns
-                    full_schema_fields = list(base_schema)
-                    full_schema_fields.extend([
-                        pa.field("_debug_auth_status", pa.string(), nullable=True),
-                        pa.field("_debug_api_status", pa.string(), nullable=True),
-                        pa.field("_debug_api_items_count", pa.int64(), nullable=True),
-                        pa.field("_debug_execution_mode", pa.string(), nullable=True),
-                        pa.field("_debug_rows_yielded", pa.int64(), nullable=True),
-                        pa.field("_debug_error", pa.string(), nullable=True),
-                    ])
-                    full_schema = pa.schema(full_schema_fields)
-                    
-                    # Create table with 1 row (all NULL data, but debug info populated)
-                    debug_table = pa.Table.from_arrays(
-                        empty_data_cols + list(debug_cols.values()),
-                        schema=full_schema
+                    # Include detailed error info in debug_error (response body and request payload)
+                    debug_error = json.dumps({
+                        "error": str(http_error),
+                        "http_status": http_status,
+                        "response_body": error_body,
+                        "response_headers": response_headers,
+                        "request_payload": json.dumps(payload)[:1000] if payload else None,
+                        "request_url": full_url,
+                    })
+                    yield (
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                        debug_credential_types,
+                        debug_credential_extracted,
+                        debug_missing_credentials,
+                        debug_token,
                     )
-                    arrow_table = debug_table
-                else:
-                    # Normal case: add debug columns to existing data rows
-                    debug_cols = {
-                        "_debug_auth_status": pa.array([debug_auth_status] * num_rows, type=pa.string()),
-                        "_debug_api_status": pa.array([debug_api_status] * num_rows, type=pa.string()),
-                        "_debug_api_items_count": pa.array([num_rows] * num_rows, type=pa.int64()),
-                        "_debug_execution_mode": pa.array([('scalar' if is_scalar_mode else 'arrow')] * num_rows, type=pa.string()),
-                        "_debug_rows_yielded": pa.array([num_rows] * num_rows, type=pa.int64()),
-                        "_debug_error": pa.array([debug_error] * num_rows, type=pa.string()),
-                    }
-                    # Get full schema with debug columns (use base_schema + debug fields from _arrow_schema)
-                    full_schema_fields = list(base_schema)
-                    full_schema_fields.extend([
-                        pa.field("_debug_auth_status", pa.string(), nullable=True),
-                        pa.field("_debug_api_status", pa.string(), nullable=True),
-                        pa.field("_debug_api_items_count", pa.int64(), nullable=True),
-                        pa.field("_debug_execution_mode", pa.string(), nullable=True),
-                        pa.field("_debug_rows_yielded", pa.int64(), nullable=True),
-                        pa.field("_debug_error", pa.string(), nullable=True),
-                    ])
-                    full_schema = pa.schema(full_schema_fields)
-                    # Combine original table with debug columns
-                    # CRITICAL: Extract arrays from table columns correctly
-                    # arrow_table.columns returns Column objects, not arrays
-                    # We need to get the underlying chunks/arrays
-                    original_arrays = []
-                    for i in range(len(arrow_table.schema)):
-                        col = arrow_table.column(i)
-                        # Get the first (and usually only) chunk as the array
-                        if col.num_chunks > 0:
-                            original_arrays.append(col.chunk(0))
-                        else:
-                            # Empty column - create empty array with correct type
-                            original_arrays.append(pa.array([], type=col.type))
-                    
-                    # Validate we have the expected number of arrays
-                    expected_original_cols = len(arrow_table.schema)
-                    if len(original_arrays) != expected_original_cols:
-                        error_msg = (
-                            f"[UDTF] ✗ Schema mismatch: Extracted {len(original_arrays)} arrays, "
-                            f"but table has {expected_original_cols} columns. "
-                            f"Table schema: {[f.name for f in arrow_table.schema]}"
+{% else %}
+                    yield (None, None, None)
+{% endif %}
+                    return
+                except Exception as parse_error:
+                    # If protobuf parsing fails, try JSON fallback
+                    sys.stderr.write(f"[UDTF] WARNING: Protobuf parsing failed: {parse_error}. Trying JSON fallback...\n")
+                    try:
+                        # Retry with JSON Accept header
+                        response = _make_request(
+                            method="POST",
+                            url=full_url,
+                            token=token,
+                            json_data=payload,
+                            timeout=30,
+                            accept_protobuf=False,  # Request JSON response
                         )
-                        sys.stderr.write(f"{error_msg}\n")
-                        print(error_msg)
-                        raise ValueError(error_msg)
-                    
-                    debug_table = pa.Table.from_arrays(
-                        original_arrays + list(debug_cols.values()),
-                        schema=full_schema
+{% if debug %}
+                        import json
+                        debug_protobuf_info = json.dumps({
+                            "fallback_to_json": True,
+                            "protobuf_error": str(parse_error),
+                            "json_content_type": response.headers.get('content-type', 'unknown'),
+                        })
+{% endif %}
+                        response_data = response.json()
+                        items = response_data.get("items", [])
+                        for item in items:
+                            # Extract time series identifier
+                            if "instanceId" in item:
+                                instance_id_obj = item["instanceId"]
+                                space = instance_id_obj.get("space", "")
+                                ext_id = instance_id_obj.get("externalId", "")
+                            else:
+                                space = ""
+                                ext_id = item.get("externalId", "")
+                            
+                            ts_external_id = f"{space}:{ext_id}" if space and ext_id else ext_id
+                            if aggregates_str and include_aggregate_name_bool:
+                                ts_external_id = f"{ts_external_id}|{aggregates_str.lower()}"
+                            
+                            # Parse numeric datapoints
+                            if "numericDatapoints" in item:
+                                datapoints = item["numericDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", 0.0))
+                                    ts_external_ids.append(ts_external_id)
+                            
+                            # Parse aggregate datapoints
+                            if "aggregateDatapoints" in item:
+                                datapoints = item["aggregateDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    if aggregates_str:
+                                        agg_name = aggregates_str.lower()
+                                        if agg_name == 'average':
+                                            values.append(dp.get("average", 0.0))
+                                        elif agg_name == 'max':
+                                            values.append(dp.get("max", 0.0))
+                                        elif agg_name == 'min':
+                                            values.append(dp.get("min", 0.0))
+                                        elif agg_name == 'count':
+                                            values.append(float(dp.get("count", 0)))
+                                        elif agg_name == 'sum':
+                                            values.append(dp.get("sum", 0.0))
+                                        else:
+                                            values.append(dp.get("average", 0.0))
+                                    else:
+                                        values.append(dp.get("average", 0.0))
+                                    ts_external_ids.append(ts_external_id)
+                            
+                            # Parse string datapoints
+                            if "stringDatapoints" in item:
+                                datapoints = item["stringDatapoints"].get("datapoints", [])
+                                for dp in datapoints:
+                                    timestamps.append(dp.get("timestamp", 0))
+                                    values.append(dp.get("value", ""))
+                                    ts_external_ids.append(ts_external_id)
+                        
+                        sys.stderr.write(f"[UDTF] DEBUG: Parsed {len(timestamps)} datapoints from JSON fallback\n")
+                    except requests.exceptions.HTTPError as json_http_error:
+                        # Capture API response body for 400 errors in JSON fallback
+                        import json
+                        error_body = ""
+                        http_status = None
+                        response_headers = {}
+                        if json_http_error.response is not None:
+                            http_status = json_http_error.response.status_code
+                            response_headers = dict(json_http_error.response.headers)
+                            try:
+                                # Try to get response body - may have been consumed
+                                if hasattr(json_http_error.response, 'text'):
+                                    error_body = json_http_error.response.text[:500]
+                                elif hasattr(json_http_error.response, 'content'):
+                                    # Try content if text is not available
+                                    try:
+                                        error_body = json_http_error.response.content.decode('utf-8', errors='ignore')[:500]
+                                    except Exception:
+                                        error_body = str(json_http_error.response.content)[:500]
+                            except Exception as body_error:
+                                error_body = f"Failed to read response body: {body_error}"
+                        error_msg = f"API request failed (JSON fallback): {json_http_error} (Status: {http_status}, Response: {error_body})"
+                        sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
+{% if debug %}
+                        # Include detailed error info in debug_error (response body and request payload)
+                        debug_error = json.dumps({
+                            "error": str(json_http_error),
+                            "protobuf_error": str(parse_error),
+                            "http_status": http_status,
+                            "response_body": error_body,
+                            "response_headers": response_headers,
+                            "request_payload": json.dumps(payload)[:1000] if payload else None,
+                            "request_url": full_url,
+                        })
+                        yield (
+                            None,
+                            None,
+                            None,
+                            debug_auth_status,
+                            debug_api_status,
+                            debug_api_items_count,
+                            "scalar",
+                            0,
+                            debug_error,
+                            debug_credential_types,
+                            debug_credential_extracted,
+                            debug_missing_credentials,
+                            debug_token,
+                        )
+{% else %}
+                        yield (None, None, None)
+{% endif %}
+                        return
+                    except Exception as json_error:
+                        error_msg = f"Failed to parse response (protobuf: {parse_error}, JSON: {json_error})"
+                        sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
+{% if debug %}
+                        import json
+                        debug_protobuf_info = json.dumps({
+                            "error": error_msg,
+                            "protobuf_error": str(parse_error),
+                            "json_error": str(json_error),
+                        })
+{% endif %}
+                        raise Exception(error_msg)
+
+                if not timestamps:
+                    sys.stderr.write(
+                        "[UDTF] WARNING: No datapoints found, yielding empty row to prevent 'end-of-input' error\n"
                     )
-                    arrow_table = debug_table
-{% endif %}
-                
-                # Debug: Log table info (both stderr and stdout for Serverless SQL visibility)
-                table_info = f"[UDTF] Arrow table created: {arrow_table.num_rows} rows, {len(arrow_table.schema)} columns"
-                mode_info = f"[UDTF] Execution mode: {'scalar' if is_scalar_mode else 'arrow'}"
-                sys.stderr.write(f"{table_info}\n")
-                sys.stderr.write(f"{mode_info}\n")
-                print(table_info)  # Also print to stdout for Serverless SQL visibility
-                print(mode_info)   # Also print to stdout for Serverless SQL visibility
 {% if debug %}
-                _write_debug_log(table_info)
-                _write_debug_log(mode_info)
-                debug_execution_mode = 'scalar' if is_scalar_mode else 'arrow'
+                    debug_execution_mode = "scalar"
+                    debug_rows_yielded = 0
+                    debug_error = "NO_DATA"
+                    yield (
+                        None,
+                        None,
+                        None,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        0,
+                        debug_error,
+                    )
+{% else %}
+                    yield (None, None, None)
 {% endif %}
-                
-                # HYBRID YIELD (The Fix for Schema Mismatch)
-                if is_scalar_mode:
-                    # --- SCALAR FALLBACK ---
-                    # Unpack Arrow Table to Python Tuples to satisfy Spark
-                    pydict = arrow_table.to_pydict()
-                    col_names = arrow_table.schema.names
-                    col_values = [pydict[name] for name in col_names]
-                    
-                    # Debug: Log conversion info (both stderr and stdout for Serverless SQL visibility)
-                    if col_values and len(col_values) > 0:
-                        conv_info = f"[UDTF] Converting to tuples: {len(col_names)} columns, {len(col_values[0]) if col_values[0] else 0} rows"
-                    else:
-                        conv_info = f"[UDTF] Converting to tuples: {len(col_names)} columns, 0 rows"
-                    sys.stderr.write(f"{conv_info}\n")
-                    print(conv_info)  # Also print to stdout for Serverless SQL visibility
+                    return
+
+                row_count = len(timestamps)
 {% if debug %}
-                    _write_debug_log(conv_info)
+                debug_execution_mode = "scalar"
+                debug_rows_yielded = row_count
+                debug_api_items_count = row_count
 {% endif %}
-                    
-                    # Zip into rows and yield: (val1_row1, val2_row1, ...)
-                    row_count = 0
-                    for row in zip(*col_values):
-                        yield row
-                        row_count += 1
-                    
-                    # Log success (both stderr and stdout for Serverless SQL visibility)
-                    success_msg = f"[UDTF] ✓ Successfully yielded {row_count} rows (scalar mode)"
-                    sys.stderr.write(f"{success_msg}\n")
-                    print(success_msg)  # Also print to stdout for Serverless SQL visibility
+
+                for ts, ts_external_id, val in zip(timestamps, ts_external_ids, values):
+                    timestamp_dt = (
+                        datetime.fromtimestamp(ts / 1000.0, tz=timezone.utc) if ts is not None else None
+                    )
 {% if debug %}
-                    _write_debug_log(success_msg)
-                    debug_rows_yielded = row_count
+                    yield (
+                        timestamp_dt,
+                        ts_external_id,
+                        val,
+                        debug_auth_status,
+                        debug_api_status,
+                        debug_api_items_count,
+                        "scalar",
+                        row_count,
+                        debug_error,
+                        debug_credential_types,
+                        debug_credential_extracted,
+                        debug_missing_credentials,
+                        debug_token,
+                    )
+{% else %}
+                    yield (timestamp_dt, ts_external_id, val)
 {% endif %}
-                else:
-                    # --- ARROW MODE ---
-                    # Yield RecordBatches for zero-copy transfer
-                    batches = arrow_table.to_batches(max_chunksize=8192)
-                    batch_count = 0
-                    for batch in batches:
-                        yield batch
-                        batch_count += 1
-                    
-                    # Log success (both stderr and stdout for Serverless SQL visibility)
-                    success_msg = f"[UDTF] ✓ Successfully yielded {arrow_table.num_rows} rows in {batch_count} batches (arrow mode)"
-                    sys.stderr.write(f"{success_msg}\n")
-                    print(success_msg)  # Also print to stdout for Serverless SQL visibility
+
+                success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
+                sys.stderr.write(f"{success_msg}\n")
+                print(success_msg)  # Also print to stdout for Serverless SQL visibility
 {% if debug %}
-                    _write_debug_log(success_msg)
-                    debug_rows_yielded = arrow_table.num_rows
+                _write_debug_log(success_msg)
 {% endif %}
-                
+
             except Exception as e:
                 # Log error for debugging (without traceback to avoid import issues)
                 # Both stderr and stdout for Serverless SQL visibility
@@ -703,15 +1247,28 @@ class TimeSeriesDatapointsLongUDTF:
 {% if debug %}
                 _write_debug_log(error_info)
                 debug_error = f"{type(e).__name__}: {str(e)}"
+                yield (
+                    None,
+                    None,
+                    None,
+                    debug_auth_status,
+                    debug_api_status,
+                    debug_api_items_count,
+                    "scalar",
+                    0,
+                    debug_error,
+                    debug_credential_types,
+                    debug_credential_extracted,
+                    debug_missing_credentials,
+                    debug_token,
+                )
+{% else %}
+                yield (None, None, None)
 {% endif %}
-                # Return empty appropriate to mode
-                if is_scalar_mode:
-                    return  # Yield nothing (empty iterator)
-                else:
-                    yield self._empty_record_batch()
+                return
                 
         except Exception as outer_error:
-            # Last resort: if anything goes wrong, yield empty RecordBatch
+            # Last resort: if anything goes wrong, yield empty row to prevent zero rows
             # Both stderr and stdout for Serverless SQL visibility
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n")
@@ -719,30 +1276,23 @@ class TimeSeriesDatapointsLongUDTF:
 {% if debug %}
             _write_debug_log(error_info)
             debug_error = f"{type(outer_error).__name__}: {str(outer_error)}"
+            yield (
+                None,
+                None,
+                None,
+                debug_auth_status,
+                debug_api_status,
+                debug_api_items_count,
+                "scalar",
+                0,
+                debug_error,
+                None,  # debug_credential_types
+                None,  # debug_credential_extracted
+                None,  # debug_missing_credentials
+                None,  # debug_token
+            )
+{% else %}
+            yield (None, None, None)
 {% endif %}
-            # Detect mode from outer scope if available
-            try:
-                if is_scalar_mode:
-                    return
-            except NameError:
-                pass  # is_scalar_mode not defined, use Arrow mode fallback
-            yield self._empty_record_batch()
+            return
 
-    def _empty_record_batch(self) -> pa.RecordBatch:
-        """Create empty RecordBatch with correct schema."""
-        # Defensive import: ensure pyarrow is available (Unity Catalog execution context)
-        import pyarrow as pa
-        
-        schema = pa.schema([
-            pa.field("timestamp", pa.timestamp('ms'), nullable=True),
-            pa.field("time_series_external_id", pa.string(), nullable=True),
-            pa.field("value", pa.float64(), nullable=True),
-        ])
-        return pa.RecordBatch.from_arrays(
-            [
-                pa.array([], type=pa.timestamp('ms')),
-                pa.array([], type=pa.string()),
-                pa.array([], type=pa.float64()),
-            ],
-            schema=schema
-        )
