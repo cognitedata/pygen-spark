@@ -274,8 +274,6 @@ class SparkUDTFGenerator(SDKGenerator):
         time_series_udtfs = {
             "time_series_datapoints_udtf": "time_series_datapoints_udtf.py.jinja",
             "time_series_datapoints_detailed_udtf": "time_series_datapoints_detailed_udtf.py.jinja",
-            "time_series_datapoints_multi_udtf": "time_series_datapoints_multi_udtf.py.jinja",
-            "time_series_datapoints_long_udtf": "time_series_datapoints_long_udtf.py.jinja",
             "time_series_latest_datapoints_udtf": "time_series_latest_datapoints_udtf.py.jinja",
         }
 

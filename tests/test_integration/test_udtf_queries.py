@@ -90,7 +90,7 @@ class TestTimeSeriesUdtfQueries:
         mock_cognite_client: object,  # type: ignore[type-arg]
     ) -> None:
         """Test multiple time series datapoints query (Cell 18)."""
-        # This tests the time_series_datapoints_long_udtf template
+        # This tests the time_series_datapoints_detailed_udtf template
         from cognite.pygen_spark.utils import parse_instance_ids
 
         instance_ids_str = (

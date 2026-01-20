@@ -16,7 +16,7 @@ Time series UDTFs work with any Spark cluster that supports PySpark UDTFs, inclu
 The following time series UDTFs are available:
 
 1. **`time_series_datapoints_udtf`**: Query datapoints from a single time series
-2. **`time_series_datapoints_long_udtf`**: Query datapoints from multiple time series in long format
+2. **`time_series_datapoints_detailed_udtf`**: Query datapoints from multiple time series with detailed output
 3. **`time_series_latest_datapoints_udtf`**: Get the latest datapoints for one or more time series
 
 ## Installation
@@ -76,17 +76,17 @@ The `pygen-spark` package includes template-generated time series UDTF classes f
 from pyspark.sql.functions import udtf
 from cognite.pygen_spark.time_series_udtfs import (
     TimeSeriesDatapointsUDTF,
-    TimeSeriesDatapointsLongUDTF,
+    TimeSeriesDatapointsDetailedUDTF,
     TimeSeriesLatestDatapointsUDTF,
 )
 
 # Register time series UDTFs
 time_series_datapoints_udtf = udtf(TimeSeriesDatapointsUDTF)
-time_series_datapoints_long_udtf = udtf(TimeSeriesDatapointsLongUDTF)
+time_series_datapoints_detailed_udtf = udtf(TimeSeriesDatapointsDetailedUDTF)
 time_series_latest_datapoints_udtf = udtf(TimeSeriesLatestDatapointsUDTF)
 
 spark.udtf.register("time_series_datapoints_udtf", time_series_datapoints_udtf)
-spark.udtf.register("time_series_datapoints_long_udtf", time_series_datapoints_long_udtf)
+spark.udtf.register("time_series_datapoints_detailed_udtf", time_series_datapoints_detailed_udtf)
 spark.udtf.register("time_series_latest_datapoints_udtf", time_series_latest_datapoints_udtf)
 
 print("✓ Time Series UDTFs registered")
@@ -119,21 +119,23 @@ SELECT * FROM time_series_datapoints_udtf(
 - `granularity`: Optional granularity for aggregates (e.g., "1h", "1d", "30s")
 - `client_id`, `client_secret`, `tenant_id`, `cdf_cluster`, `project`: CDF credentials
 
-## Querying Multiple Time Series (Long Format)
+## Querying Multiple Time Series (Detailed Format)
 
-Query multiple time series in long format (one row per datapoint). Time series can be from different spaces:
+Query multiple time series with detailed output. Time series can be from different spaces:
 
 ```sql
-SELECT * FROM time_series_datapoints_long_udtf(
+SELECT * FROM time_series_datapoints_detailed_udtf(
     instance_ids => 'sailboat:ts1,otherspace:ts2,sailboat:ts3',  -- Format: "space:external_id"
     start => '1d-ago',
     end => 'now',
+    aggregates => 'average',
+    granularity => '1h',
     client_id => 'your-client-id',
     client_secret => 'your-client-secret',
     tenant_id => 'your-tenant-id',
     cdf_cluster => 'westeurope-1',
     project => 'your-project'
-) ORDER BY time_series_external_id, timestamp LIMIT 20;
+) ORDER BY space, external_id, timestamp LIMIT 20;
 ```
 
 **Parameters:**
@@ -142,9 +144,8 @@ SELECT * FROM time_series_datapoints_long_udtf(
 - `end`: End time (supports 'now' or ISO 8601 timestamps)
 - `aggregates`: Optional aggregate type (e.g., "average", "max", "min")
 - `granularity`: Optional granularity for aggregates (e.g., "1h", "30d")
-- `include_aggregate_name`: Whether to include aggregate name in time_series_external_id
 
-**Note**: The `time_series_external_id` in the output is in format `"space:external_id"` to support time series from different spaces.
+**Note**: The detailed UDTF returns separate columns for `space` and `external_id` to support time series from different spaces.
 
 ## Querying Latest Datapoints
 

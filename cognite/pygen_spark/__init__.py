@@ -8,7 +8,6 @@ from cognite.pygen_spark.models import (
     ViewSQLGenerationResult,
 )
 from cognite.pygen_spark.time_series_udtfs import (
-    TimeSeriesDatapointsLongUDTF,
     TimeSeriesDatapointsUDTF,
     TimeSeriesLatestDatapointsUDTF,
 )
@@ -25,7 +24,6 @@ __all__ = [
     "CDFConnectionConfig",
     "InstanceId",
     "SparkUDTFGenerator",
-    "TimeSeriesDatapointsLongUDTF",
     "TimeSeriesDatapointsUDTF",
     "TimeSeriesLatestDatapointsUDTF",
     "TypeConverter",
