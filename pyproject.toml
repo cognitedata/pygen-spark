@@ -121,7 +121,7 @@ module = "cognite.pygen.*"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "tomli.*"
+module = "tomli"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
