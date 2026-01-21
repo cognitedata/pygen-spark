@@ -47,17 +47,17 @@ class UDTFGenerationResult(BaseModel):
         # Try exact match first
         if view_id in self.generated_files:
             return self.generated_files[view_id]
-        
+
         # Try with _session suffix
         session_key = f"{view_id}_session"
         if session_key in self.generated_files:
             return self.generated_files[session_key]
-        
+
         # Try with _catalog suffix
         catalog_key = f"{view_id}_catalog"
         if catalog_key in self.generated_files:
             return self.generated_files[catalog_key]
-        
+
         return None
 
     def __getitem__(self, view_id: str) -> Path:
