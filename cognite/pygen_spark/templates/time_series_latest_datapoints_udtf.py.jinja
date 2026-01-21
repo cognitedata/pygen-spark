@@ -62,6 +62,133 @@ class TimeSeriesLatestDatapointsUDTF:
             StructField("status_code", IntegerType(), nullable=True),
         ]
 
+        return StructType(fields)
+    
+    def eval(
+        self,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        tenant_id: str | None = None,
+        cdf_cluster: str | None = None,
+        project: str | None = None,
+        instance_ids: str | None = None,  # Format: "space1:ext_id1,space2:ext_id2"
+        before: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601
+        include_status: object | None = None,  # Boolean
+    ) -> Iterator[tuple]:
+        """Execute scalar UDTF using instance_ids (comma-separated) for query.
+        
+        Uses scalar execution for Unity Catalog SQL registration compatibility.
+        
+        Args:
+            client_id: OAuth2 client ID (scalar)
+            client_secret: OAuth2 client secret (scalar)
+            tenant_id: Azure AD tenant ID (scalar)
+            cdf_cluster: CDF cluster URL (scalar)
+            project: CDF project name (scalar)
+            instance_ids: Comma-separated instance IDs in format "space1:ext_id1,space2:ext_id2" (scalar)
+            before: Timestamp before which to retrieve latest datapoints (scalar)
+            include_status: Whether to include status information (scalar, boolean)
+        
+        Yields:
+            Tuples with (time_series_external_id, timestamp, value, status_code) columns
+        """
+        import sys
+        
+        # CRITICAL: Define helper functions inside eval() for Unity Catalog compatibility
+        # Unity Catalog's execution context may not execute module-level code,
+        # so all helper functions must be defined here to ensure they're available
+        {% set skip_docstring = True %}
+        {% filter indent(8, first=True, blank=True) %}
+        {% include '_http_client.py.jinja' %}
+        {% endfilter %}
+        
+        try:
+            # Helper function to extract scalar from Python input
+            def _extract_scalar(value: object | None) -> object | None:
+                """Extract scalar value from Python input (scalar mode)."""
+                if value is None:
+                    return None
+                
+                # Handle PySpark Column objects (has as_py method)
+                if hasattr(value, "as_py"):
+                    try:
+                        result = value.as_py()
+                        if isinstance(result, bytes):
+                            return result.decode('utf-8')
+                        return result
+                    except Exception as e:
+                        sys.stderr.write(f"[UDTF] WARNING: as_py() failed for {type(value).__name__}: {e}\n")
+                
+                # Handle string directly
+                if isinstance(value, str):
+                    return value
+                
+                # Handle bytes
+                if isinstance(value, bytes):
+                    try:
+                        return value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        sys.stderr.write(f"[UDTF] WARNING: Failed to decode bytes value\n")
+                        return None
+                
+                # Try to convert to string as fallback
+                try:
+                    str_value = str(value)
+                    if str_value and str_value.lower() != "none":
+                        return str_value
+                    return None
+                except Exception:
+                    return None
+            
+            # Helper function to extract boolean from Python input
+            def _extract_bool(value: object | None) -> bool:
+                """Extract boolean value from Python input (scalar mode)."""
+                if value is None:
+                    return False
+                
+                # Handle PySpark Column objects (has as_py method)
+                if hasattr(value, "as_py"):
+                    try:
+                        result = value.as_py()
+                        if isinstance(result, bool):
+                            return result
+                        # Convert string representations
+                        if isinstance(result, str):
+                            return result.lower() in ("true", "1", "yes", "on")
+                        # Convert numeric
+                        if isinstance(result, (int, float)):
+                            return bool(result)
+                    except Exception:
+                        pass
+                
+                # Handle boolean directly
+                if isinstance(value, bool):
+                    return value
+                
+                # Handle string representations
+                if isinstance(value, str):
+                    return value.lower() in ("true", "1", "yes", "on")
+                
+                # Handle numeric
+                if isinstance(value, (int, float)):
+                    return bool(value)
+                
+                # Default to False
+                return False
+            
+            # Extract scalar values from Python inputs
+            client_id_str = _extract_scalar(client_id)
+            client_secret_str = _extract_scalar(client_secret)
+            tenant_id_str = _extract_scalar(tenant_id)
+            cdf_cluster_str = _extract_scalar(cdf_cluster)
+            project_str = _extract_scalar(project)
+            
+            # Validate required parameters
+            if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
+                error_msg = "Missing required parameters: client_id, client_secret, tenant_id, cdf_cluster, or project"
+                error_category = 'CONFIGURATION'
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+
                 yield (None, None, None, None)
 
                 return
@@ -235,6 +362,9 @@ class TimeSeriesLatestDatapointsUDTF:
                     "access_token": token,
                     "expires_at": expires_at,
                 }
+            except Exception as token_error:
+                error_category = _classify_error(None, token_error)
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: Failed to acquire OAuth token: {token_error}\n")
 
                 yield (None, None, None, None)
 
@@ -245,19 +375,72 @@ class TimeSeriesLatestDatapointsUDTF:
                 query_start = f"[UDTF] Querying latest datapoints for {len(node_ids)} time series"
                 sys.stderr.write(f"{query_start}\n")
                 print(query_start)  # Also print to stdout for Serverless SQL visibility
-
-                    yield (None, None, None, None)
-
-                    return
-
-                row_count = len(timestamps)
-
-                    yield (ts_external_id, timestamp_dt, val, status)
-
-
+                
+                # Make direct REST call to CDF API
+                base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+                api_path = f"/api/v1/projects/{project_str}/timeseries/data/latest"
+                full_url = f"{base_url}{api_path}"
+                
+                # Build request payload
+                payload = {
+                    "items": [
+                        {
+                            "instanceId": {
+                                "space": node_id["space"],
+                                "externalId": node_id["externalId"],
+                            }
+                        }
+                        for node_id in node_ids
+                    ],
+                    "before": before_str,
+                    "includeStatus": include_status_bool,
+                }
+                
+                # Make request
+                response = _make_request(
+                    method="POST",
+                    url=full_url,
+                    token=token,
+                    json_data=payload,
+                    timeout=30,
+                )
+                
+                response_data = response.json()
+                items = response_data.get("items", [])
+                
+                # Import datetime and timezone for timestamp conversion
+                from datetime import datetime, timezone
+                
+                row_count = 0
+                for item in items:
+                    instance_id = item.get("instanceId", {})
+                    space_val = instance_id.get("space", "")
+                    external_id_val = instance_id.get("externalId", "")
+                    ts_external_id = f"{space_val}:{external_id_val}"
+                    
+                    # Get the latest datapoint
+                    datapoint = item.get("datapoint")
+                    if datapoint:
+                        ts_ms = datapoint.get("timestamp", 0)
+                        timestamp_dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
+                        val = datapoint.get("value")
+                        status = datapoint.get("status", {})
+                        status_code = status.get("code") if include_status_bool else None
+                        
+                        yield (ts_external_id, timestamp_dt, val, status_code)
+                        row_count += 1
+                
+                # Log success (both stderr and stdout for Serverless SQL visibility)
                 success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
                 sys.stderr.write(f"{success_msg}\n")
                 print(success_msg)  # Also print to stdout for Serverless SQL visibility
+
+            except Exception as e:
+                # Log error for debugging (without traceback to avoid import issues)
+                # Both stderr and stdout for Serverless SQL visibility
+                error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}"
+                sys.stderr.write(error_info)
+                print(error_info)  # Also print to stdout for Serverless SQL visibility
 
                 yield (None, None, None, None)
 
@@ -269,6 +452,8 @@ class TimeSeriesLatestDatapointsUDTF:
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n")
             print(error_info)  # Also print to stdout for Serverless SQL visibility
+
+            yield (None, None, None, None)
 
             return
 
