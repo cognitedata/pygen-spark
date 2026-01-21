@@ -13,7 +13,6 @@ from cognite.client.data_classes.data_modeling import DataModelIdentifier
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import SDKGenerator  # type: ignore[import-untyped]
 from cognite.pygen.config import PygenConfig  # type: ignore[import-untyped]
-
 from cognite.pygen_spark.models import (
     UDTFGenerationResult,
     ViewSQLGenerationResult,

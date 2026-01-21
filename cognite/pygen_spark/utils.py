@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from pydantic import BaseModel, Field, field_validator
+
 # Import from private API (same pattern as pygen-spark)
 from cognite.pygen.utils.text import to_snake  # type: ignore[import-untyped]
-from pydantic import BaseModel, Field, field_validator
 
 if TYPE_CHECKING:
     from cognite.client.data_classes.data_modeling.ids import NodeId
