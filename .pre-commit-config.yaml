@@ -22,7 +22,5 @@ repos:
       files: ^.*\.(py|pyi)$
       language: system
       pass_filenames: false
-      # Don't fail if .dmypy.json is modified (it's a cache file)
-      always_run: false
     repo: local
 
