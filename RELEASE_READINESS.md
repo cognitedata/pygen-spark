@@ -2,116 +2,155 @@
 
 **Date**: 2025-01-20  
 **Branch**: fixing-unity-catalog-registration  
-**Status**: ⚠️ **Almost Ready** - Minor issues to address
+**Status**: ✅ **Ready for Release** (after merging to main)
 
-## ✅ Checks Passed
+## ✅ Prerequisites (per release.md)
 
-### Code Quality
-- ✅ **Ruff Linting**: All checks passed (4 auto-fixed issues)
-- ✅ **Ruff Formatting**: All files formatted correctly (4 files auto-formatted)
-- ✅ **MyPy Type Checking**: Success - no issues found in 11 source files
+### Step 1: Local Environment
+- ✅ **Working directory clean**: `git status` shows no uncommitted changes
+- ✅ **On release branch**: `fixing-unity-catalog-registration`
+- ⚠️ **Need to merge to main**: Currently on feature branch (per release.md Step 1)
+
+### Step 2: Build and Test
+- ✅ **Ruff Linting**: All checks passed
+- ✅ **Ruff Formatting**: All files formatted correctly (27 files)
+- ✅ **MyPy Type Checking**: Success - no issues found
 - ✅ **Package Build**: Successfully built wheel and source distribution
+- ⚠️ **Pytest**: Windows compatibility issue (known PySpark limitation - CI/CD runs on Linux)
 
-### Code Changes
-- ✅ Removed all debug-related code from templates
-- ✅ Fixed long comment lines (>120 chars)
-- ✅ Improved exception handling specificity
-- ✅ Verified import grouping
-- ✅ All type hints use `|` instead of `Optional`
+### Step 3: Tags
+- ✅ **Tags exist**: `v0.0.0` and `0.1.0` found
+- ✅ **Initial tag present**: No need to create `v0.0.0` (already exists)
 
-## ⚠️ Issues to Address
+### Version Files
+- ✅ **pyproject.toml**: `version = "0.0.0"` (correct placeholder)
+- ✅ **cognite/pygen_spark/_version.py**: `__version__ = "0.0.0"` (correct placeholder)
 
-### 1. Uncommitted Changes
-**Status**: ⚠️ **Action Required**
+## ✅ Code Quality Checks
 
-**Files Modified** (11 files, ~2,747 lines removed - debug code removal):
-- `cognite/pygen_spark/__init__.py`
-- `cognite/pygen_spark/_version.py`
-- `cognite/pygen_spark/generator.py`
-- `cognite/pygen_spark/templates/time_series_datapoints_detailed_udtf.py.jinja` (~1,006 lines removed)
-- `cognite/pygen_spark/templates/time_series_datapoints_udtf.py.jinja` (~531 lines removed)
-- `cognite/pygen_spark/templates/time_series_latest_datapoints_udtf.py.jinja` (~614 lines removed)
-- `cognite/pygen_spark/templates/udtf_function.py.jinja` (~581 lines removed)
-- `cognite/pygen_spark/time_series_udtfs.py`
-- `cognite/pygen_spark/type_converter.py`
-- `cognite/pygen_spark/udtf_generator.py`
-- `update_build_timestamp.py` (formatting)
-- `uv.lock` (dependency updates)
+### Linting & Formatting
+- ✅ **Ruff Check**: All checks passed
+- ✅ **Ruff Format**: All files formatted correctly
+- ✅ **UP038 Ignored**: Added to ignore list for pre-commit compatibility
 
-**Action**: Commit these changes before release
+### Type Checking
+- ✅ **MyPy**: Success - no issues found in all source files
+- ✅ **Type Hints**: All functions have proper type hints
+- ✅ **Union Types**: Using `|` syntax (Python 3.10+)
 
-### 2. Branch Status
-**Current Branch**: `fixing-unity-catalog-registration`
+### Build
+- ✅ **Package Build**: Successfully built `cognite-pygen-spark` wheel and source distribution
+- ✅ **Dependencies**: All dependencies resolved correctly
 
-**Action Required**: 
-- Merge changes to `main` branch before release
-- Ensure working directory is clean (per release.md Step 1)
+## 📋 Release Checklist (per release.md)
 
-### 3. PySpark Test Issue (Windows)
-**Status**: ⚠️ **Known Issue** - May not affect CI/CD
+### Before Creating Release PR
 
-**Error**: `AttributeError: module 'socketserver' has no attribute 'UnixStreamServer'`
+- [x] **All changes committed** ✅ (working directory clean)
+- [ ] **Merge to main branch** ⚠️ (currently on `fixing-unity-catalog-registration`)
+- [x] **Working directory clean** ✅ (`git status` confirms)
+- [x] **Tags exist** ✅ (`v0.0.0` and `0.1.0` found)
+- [x] **Version files at `0.0.0`** ✅ (correct placeholder)
+- [x] **Ruff linting passes** ✅
+- [x] **Ruff formatting passes** ✅
+- [x] **MyPy type checking passes** ✅
+- [ ] **Pytest passes** ⚠️ (Windows issue - verify in CI/CD)
+- [x] **Package builds successfully** ✅
 
-**Context**: 
-- PySpark has known compatibility issues on Windows
-- CI/CD likely runs on Linux where this won't be an issue
-- Tests may need to be run in CI/CD environment
+### When Merging (CRITICAL STEPS per release.md Step 11)
 
-**Action**: 
-- Verify tests pass in CI/CD (Linux environment)
-- Consider adding Windows-specific test skip if needed
+- [ ] **Use "Create a merge commit"** (NOT squash or rebase)
+- [ ] **Edit merge commit message** to include `## Bump` section
+- [ ] **Edit merge commit message** to include `## Changelog` section
+- [ ] **Verify** merge commit message contains both sections before confirming
 
-### 4. MyPy Pydantic Plugin
-**Status**: ✅ **Resolved** - Works after `uv sync --all-extras`
+## 🎯 Next Steps (per release.md)
 
-**Note**: Pydantic is a transitive dependency (via cognite-pygen), so mypy plugin works correctly when all dependencies are installed.
+### Step 1: Merge to Main
+```bash
+# Switch to main branch
+git checkout main
+git pull origin main
 
-## 📋 Pre-Release Checklist
+# Merge the release branch
+git merge fixing-unity-catalog-registration --no-ff -m "Release 0.1.1 - Bug Fixes and Improvements
 
-Before creating release PR:
+## Bump
 
-- [ ] **Commit all changes** (debug removal, formatting fixes)
-- [ ] **Merge to main branch** (currently on `fixing-unity-catalog-registration`)
-- [ ] **Verify working directory is clean** (`git status`)
-- [ ] **Check for existing tags** (`git fetch --tags && git tag -l`)
-  - [ ] If no tags exist: Create and push `v0.0.0` tag (see release.md Step 4)
-- [ ] **Run all checks locally**:
-  - [x] `uv run ruff check .` ✅
-  - [x] `uv run ruff format --check .` ✅
-  - [x] `uv run mypy cognite/pygen_spark/` ✅
-  - [ ] `uv run pytest tests/` ⚠️ (Windows issue - verify in CI/CD)
-  - [x] `uv build` ✅
-- [ ] **Verify version files are at `0.0.0`** (not manually updated)
-- [ ] **Prepare PR description** with `## Bump` and `## Changelog` sections
+- [x] Patch
+- [ ] Minor
+- [ ] Skip
 
-## 🎯 Next Steps
+## Changelog
+### Fixed
 
-1. **Commit current changes**:
-   ```bash
-   git add cognite/pygen_spark/
-   git commit -m "Remove debug functionality from UDTF templates
+- Fixed time series UDTF request payload to match SDK behavior (ignoreUnknownIds, limit distribution)
+- Fixed CI/CD issues: ruff UP038 and mypy pyspark imports
+- Fixed dependency resolution for cognite-databricks
 
-   - Remove all debug columns and debug logging from templates
-   - Remove debug parameter from generator classes
-   - Fix formatting and linting issues
-   - Improve exception handling specificity"
-   ```
+### Improved
 
-2. **Merge to main** (if not already done)
+- Removed debug functionality from all UDTF templates
+- Added PySpark to dev dependencies for CI/CD testing
+- Improved exception handling specificity
+- Removed unused time_series_datapoints_long_udtf and time_series_datapoints_multi_udtf templates
 
-3. **Follow release.md Step 2**: Build and test on main branch
+### Changed
 
-4. **Create release PR** following release.md instructions
+- Updated technical plan to reflect direct REST API calls (no SDK at runtime)
+- Updated documentation to reflect template changes"
+```
+
+**OR** use GitHub web interface (recommended per release.md):
+1. Create PR from `fixing-unity-catalog-registration` to `main`
+2. Use PR description with `## Bump` and `## Changelog` sections
+3. **CRITICAL**: When merging, edit merge commit message to include both sections
+
+### Step 2: Monitor Release Workflow
+- Workflow will automatically trigger on push to `main`
+- Monitor at: https://github.com/cognitedata/pygen-spark/actions/workflows/release.yaml
+
+### Step 3: Verify Release
+- Check PyPI: https://pypi.org/project/cognite-pygen-spark/
+- Check GitHub Release: https://github.com/cognitedata/pygen-spark/releases
 
 ## 📊 Summary
 
-**Overall Status**: ✅ **Ready for Release** (after committing changes and merging to main)
+**Overall Status**: ✅ **Ready for Release** (after merging to main)
 
-**Code Quality**: ✅ Excellent - All linting, formatting, and type checking passes
+**Code Quality**: ✅ Excellent
+- All linting, formatting, and type checking passes
+- Package builds successfully
+- All changes committed
 
 **Blockers**: 
-- ⚠️ Uncommitted changes need to be committed
-- ⚠️ Need to merge to main branch
-- ⚠️ Verify tests pass in CI/CD (Windows test issue is expected)
+- ⚠️ Need to merge `fixing-unity-catalog-registration` to `main` branch
+- ⚠️ Verify tests pass in CI/CD (Windows test issue is expected, CI/CD runs on Linux)
 
-**Recommendation**: Proceed with release after committing changes and merging to main. The Windows test issue is a known PySpark limitation and should not affect CI/CD.
+**Recommendation**: 
+1. Merge `fixing-unity-catalog-registration` to `main` following release.md Step 11 (CRITICAL: edit merge commit message)
+2. Monitor release workflow
+3. Verify release on PyPI and GitHub
+
+## 📝 Recent Changes Summary
+
+### Commits Ready for Release
+- `0da13ca` - Add UP038 to ruff ignore list for pre-commit compatibility
+- `8955c85` - Add PySpark to dev dependencies for CI/CD testing
+- `8615f66` - Fix CI/CD issues: ruff UP038 and mypy pyspark imports
+- `85f1934` - Remove debug functionality and prepare for release
+- `1f598c2` - Remove time_series_datapoints_long_udtf and time_series_datapoints_multi_udtf templates
+- `c6f95e2` - Update templates and configuration files
+- `c6a2d81` - Fix time series UDTF request payload to match SDK behavior
+
+### Key Improvements
+- ✅ Fixed time series UDTF request payload alignment with SDK
+- ✅ Removed all debug functionality from templates
+- ✅ Fixed CI/CD compatibility issues
+- ✅ Improved code quality (linting, type checking)
+- ✅ Updated documentation and technical plan
+
+---
+
+**Last Updated**: 2025-01-20  
+**Aligned with**: `release.md` Release Process Guide
