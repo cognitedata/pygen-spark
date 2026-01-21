@@ -1,16 +1,22 @@
 """Auto-generated Time Series Latest Datapoints UDTF for Cognite Data Fusion.
 
 This UDTF retrieves the latest datapoint(s) for one or more Time Series using instance_id.
-Similar to client.time_series.data.retrieve_latest()
+Uses direct REST calls with scalar execution for Unity Catalog SQL registration compatibility.
 Returns rows in format: (time_series_external_id, timestamp, value, status_code)
 Note: time_series_external_id is in format "space:external_id" to support time series from different spaces.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from datetime import datetime, timezone
+import sys
+import traceback
 from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+
+# NOTE: Helper functions are now defined inside eval() method for Unity Catalog compatibility
+# This ensures they're available in Unity Catalog's execution context
 
 from pyspark.sql.types import (
     StructType,
@@ -21,320 +27,248 @@ from pyspark.sql.types import (
     IntegerType,
 )
 
-if TYPE_CHECKING:
-    from cognite.client import CogniteClient
+{% if use_udtf_decorator %}
+from pyspark.sql.functions import udtf
 
-# Wrap critical imports in try-except to handle missing dependencies
-try:
-    from cognite.client import CogniteClient
-    from cognite.client.data_classes.data_modeling.ids import NodeId
-    COGNITE_AVAILABLE = True
-    IMPORT_ERROR = None
-except ImportError as import_error:
-    COGNITE_AVAILABLE = False
-    IMPORT_ERROR = str(import_error)
-    # Create dummy classes to prevent syntax errors if imports fail
-    class CogniteClient:
-        pass
-    class NodeId:
-        def __init__(self, space: str, external_id: str):
-            self.space = space
-            self.external_id = external_id
-
-
+@udtf
+{% endif %}
 class TimeSeriesLatestDatapointsUDTF:
     """UDTF for retrieving the latest datapoint(s) for one or more Time Series using instance_id.
     
+    Uses scalar UDTF execution for Unity Catalog SQL registration compatibility.
     Similar to client.time_series.data.retrieve_latest()
     Returns rows in format: (time_series_external_id, timestamp, value, status_code)
     Note: time_series_external_id is in format "space:external_id" to support time series from different spaces.
     """
     
+    def __init__(self) -> None:
+        """Initialize UDTF (no parameters allowed when using analyze method).
+        
+        Token initialization happens in eval() for all registration modes.
+        """
+        # Initialize instance variables
+        self._token_cache: dict[str, str | float] | None = None
+        self._init_error: str | None = None
+        self._init_error_category: str | None = None
+        self._init_success = True
+    
     @staticmethod
     def outputSchema() -> StructType:
         """Return schema: (time_series_external_id, timestamp, value, status_code)."""
-        return StructType([
+        fields = [
             StructField("time_series_external_id", StringType(), nullable=True),
             StructField("timestamp", TimestampType(), nullable=True),
             StructField("value", DoubleType(), nullable=True),
-            StructField("status_code", IntegerType(), nullable=True),  # Optional
-        ])
-    
-    @staticmethod
-    def analyze(
-        instance_ids: str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2"
-        before: str | None = None,
-        include_status: bool = False,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        tenant_id: str | None = None,
-        cdf_cluster: str | None = None,
-        project: str | None = None,
-    ):
-        """Analyze method required by PySpark Connect for session-scoped UDTFs.
-        
-        Args:
-            instance_ids: Comma-separated list of instance IDs in format "space:external_id" (e.g., "sailboat:ts1,otherspace:ts2")
-            before: Get latest before this time (ISO 8601 or "1h-ago", "now", etc.)
-            include_status: Include status code in output
-            client_id, client_secret, tenant_id, cdf_cluster, project: OAuth credentials
-        """
-        from pyspark.sql.udtf import AnalyzeResult
-        return AnalyzeResult(TimeSeriesLatestDatapointsUDTF.outputSchema())
-    
-    def __init__(self) -> None:
-        """Initialize UDTF (parameter-free for all registration modes)."""
-        self.client = None
-        self._client_initialized = False
-        self._init_error = None
-        self._init_error_category = None
-        self._init_success = True
-    
-    def _create_client(
-        self,
-        client_id: str,
-        client_secret: str,
-        tenant_id: str,
-        cdf_cluster: str,
-        project: str,
-        **kwargs: dict[str, object],
-    ) -> CogniteClient:
-        """Create CogniteClient with OAuth2 credentials.
-        
-        Note: Secrets are expected to be stored as plain text in Databricks Secret Manager.
-        Databricks encrypts secrets at rest, so no additional encoding is needed.
-        """
-        import sys
-        
-        # Dependencies should already be checked in __init__, but double-check here
-        if not COGNITE_AVAILABLE:
-            raise ImportError(f"Missing dependencies: {IMPORT_ERROR}")
-        
-        # These imports should work if COGNITE_AVAILABLE is True, but import locally for clarity
-        from cognite.client import CogniteClient
-        
-        try:
-            # Use SDK's default_oauth_client_credentials method (aligned with pygen-main's load_cognite_client_from_toml)
-            # This ensures consistent URL construction: https://{cdf_cluster}.cognitedata.com
-            client = CogniteClient.default_oauth_client_credentials(
-                project=project,
-                cdf_cluster=cdf_cluster,
-                tenant_id=tenant_id,
-                client_id=client_id,
-                client_secret=client_secret,
-                client_name="pygen-spark",
-            )
+            StructField("status_code", IntegerType(), nullable=True),
+        ]
+
+                yield (None, None, None, None)
+
+                return
             
-            # Verify authentication by attempting to get a token
-            # This will raise an exception if authentication fails
-            try:
-                _ = client.config.credentials.authorization_header()
-                sys.stderr.write(f"[UDTF] ✓ Authentication successful for project: {project}\n")
-            except Exception as auth_error:
-                sys.stderr.write(f"[UDTF] ✗ Authentication failed: {type(auth_error).__name__}: {str(auth_error)}\n")
-                raise
+            instance_ids_str = _extract_scalar(instance_ids)
+            if not instance_ids_str:
+                error_msg = "instance_ids is required (format: 'space1:ext_id1,space2:ext_id2')"
+                error_category = 'CONFIGURATION'
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+
+                yield (None, None, None, None)
+
+                return
             
-            return client
-        except Exception as e:
-            sys.stderr.write(f"[UDTF] ✗ Failed to create CogniteClient: {type(e).__name__}: {str(e)}\n")
-            import traceback
-            sys.stderr.write(f"{traceback.format_exc()}\n")
-            raise
-    
-    def _classify_error(self, error: Exception) -> str:
-        """Classify the type of initialization error.
-        
-        Args:
-            error: The exception that occurred during initialization
-        
-        Returns:
-            Error category string: 'AUTHENTICATION', 'CONFIGURATION', 'NETWORK', or 'UNKNOWN'
-        """
-        error_type = type(error).__name__
-        error_msg = str(error).lower()
-        
-        # Authentication-related errors
-        auth_keywords = [
-            'authentication', 'auth', 'unauthorized', 'forbidden', '401', '403',
-            'invalid_client', 'invalid_grant', 'invalid_credentials', 'token',
-            'oauth', 'client_id', 'client_secret', 'tenant_id', 'credential'
-        ]
-        if any(keyword in error_msg for keyword in auth_keywords):
-            return 'AUTHENTICATION'
-        
-        # Configuration-related errors
-        config_keywords = [
-            'config', 'configuration', 'missing', 'required', 'invalid',
-            'valueerror', 'typeerror', 'attributeerror', 'keyerror'
-        ]
-        if any(keyword in error_msg for keyword in config_keywords) or error_type in ['ValueError', 'TypeError', 'AttributeError', 'KeyError']:
-            return 'CONFIGURATION'
-        
-        # Network-related errors
-        network_keywords = [
-            'connection', 'timeout', 'network', 'dns', 'resolve', 'unreachable',
-            'connectionerror', 'timeouterror', 'httperror', 'urlerror'
-        ]
-        if any(keyword in error_msg for keyword in network_keywords) or error_type in ['ConnectionError', 'TimeoutError', 'HTTPError', 'URLError']:
-            return 'NETWORK'
-        
-        # Default to unknown
-        return 'UNKNOWN'
-    
-    def eval(
-        self,
-        instance_ids: str | None = None,  # Comma-separated: "space1:ext_id1,space2:ext_id2"
-        before: str | None = None,  # Get latest before this time (e.g., "1h-ago")
-        include_status: bool = False,
-        client_id: str | None = None,
-        client_secret: str | None = None,
-        tenant_id: str | None = None,
-        cdf_cluster: str | None = None,
-        project: str | None = None,
-    ) -> Iterator[tuple[object, ...]]:
-        """Retrieve latest datapoint(s) for one or more time series using instance_id.
-        
-        Args:
-            instance_ids: Comma-separated list of instance IDs in format "space:external_id" (e.g., "sailboat:ts1,otherspace:ts2")
-            before: Get latest before this time (ISO 8601 or "1h-ago", "now", etc.)
-            include_status: Include status code in output
-            client_id: OAuth2 client ID
-            client_secret: OAuth2 client secret
-            tenant_id: Azure AD tenant ID
-            cdf_cluster: CDF cluster URL
-            project: CDF project name
-        
-        Yields:
-            (time_series_external_id, timestamp, value, status_code) tuples where time_series_external_id is in format "space:external_id"
-        """
-        import sys
-        import traceback
-        
-        try:
-            # Initialize client if not already initialized (session-scoped mode)
-            if not self._client_initialized:
-                if client_id is None or client_secret is None:
-                    error_msg = "Missing credentials: client_id and client_secret are required for session-scoped UDTFs"
-                    error_category = 'CONFIGURATION'
-                    sys.stderr.write(f"[UDTF] ✗ Initialization failed [{error_category}]: {error_msg}\n")
-                    yield (None, None, None, None)
-                    return
+            # Convert before parameter to string (supports SQL TIMESTAMP, relative time, ISO 8601)
+            def timestamp_to_string(timestamp: object) -> str:
+                """Convert timestamp to string format accepted by CDF API.
                 
-                # Check if dependencies are available
-                if not COGNITE_AVAILABLE:
-                    error_msg = f"Missing dependencies: {IMPORT_ERROR}. Install cognite-sdk or use DBR 18.1+ with ENVIRONMENT clause."
-                    error_category = 'CONFIGURATION'
-                    sys.stderr.write(f"[UDTF] ✗ Initialization failed [{error_category}]: {error_msg}\n")
-                    yield (None, None, None, None)
-                    return
+                Supports:
+                - SQL TIMESTAMP types (datetime objects from Unity Catalog) -> ISO 8601
+                - Relative time strings: "1h-ago", "2w-ago", "now"
+                - ISO 8601 strings: "2024-01-01T00:00:00Z"
+                - SQL timestamp strings: "2024-01-01 00:00:00" -> ISO 8601
+                """
+                import re
+                from datetime import datetime, timezone
                 
-                try:
-                    self.client = self._create_client(client_id, client_secret, tenant_id, cdf_cluster, project)
-                    self._client_initialized = True
-                    self._init_error = None
-                    self._init_error_category = None
-                except Exception as e:
+                # Handle None - default to "now"
+                if timestamp is None:
+                    return "now"
+                
+                # Handle datetime objects (from SQL TIMESTAMP) -> convert to ISO 8601
+                if hasattr(timestamp, 'timestamp') or hasattr(timestamp, 'isoformat'):
                     try:
-                        self._init_error_category = self._classify_error(e)
+                        # datetime.datetime or similar object
+                        dt = timestamp
+                        # Ensure it's timezone-aware and in UTC
+                        if hasattr(dt, 'tzinfo'):
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            else:
+                                dt = dt.astimezone(timezone.utc)
+                        # Convert to ISO 8601 format
+                        if hasattr(dt, 'isoformat'):
+                            return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                        else:
+                            return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"  # Include milliseconds, add Z
+                    except (AttributeError, TypeError):
+                        pass
+                
+                # Also check for datetime-like objects with year/month/day attributes
+                if hasattr(timestamp, 'year') and hasattr(timestamp, 'month') and hasattr(timestamp, 'day'):
+                    try:
+                        # Try to construct a datetime and convert
+                        if hasattr(timestamp, 'hour'):
+                            dt = datetime(
+                                timestamp.year, timestamp.month, timestamp.day,
+                                timestamp.hour, timestamp.minute, timestamp.second,
+                                getattr(timestamp, 'microsecond', 0)
+                            )
+                        else:
+                            dt = datetime(timestamp.year, timestamp.month, timestamp.day)
+                        # Assume UTC if no timezone info
+                        if not hasattr(timestamp, 'tzinfo') or timestamp.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
                     except Exception:
-                        self._init_error_category = 'UNKNOWN'
-                    self._init_error = f"{type(e).__name__}: {str(e)}"
-                    self._client_initialized = True
-                    self._init_success = False  # Mark as failed
-                    yield (None, None, None, None)
-                    return
-            
-            # Check if initialization succeeded
-            if not hasattr(self, '_init_success') or not self._init_success or self._init_error is not None:
-                error_msg = getattr(self, '_init_error', 'Unknown initialization error')
-                error_category = getattr(self, '_init_error_category', 'UNKNOWN')
-                sys.stderr.write(f"[UDTF] ✗ Initialization failed [{error_category}]: {error_msg}\n")
-                yield (None, None, None, None)
-                return
-            
-            # Validate and parse instance_ids
-            try:
-                # Import parse function (may not be available if package not installed)
-                try:
-                    from cognite.pygen_spark.utils import parse_instance_ids
-                except ImportError:
-                    # Fallback parsing if utils not available
-                    def parse_instance_ids(instance_ids_str: str) -> list[NodeId]:
-                        if not instance_ids_str:
-                            raise ValueError("instance_ids is required (format: 'space1:ext_id1,space2:ext_id2')")
-                        node_ids = []
-                        for instance_id_str in instance_ids_str.split(","):
-                            instance_id_str = instance_id_str.strip()
-                            if not instance_id_str:
+                        pass
+                
+                # Handle string types - pass through (CDF API accepts relative time and ISO 8601)
+                if isinstance(timestamp, str):
+                    # If it's already a relative time string or ISO 8601, return as-is
+                    if timestamp.lower() == "now":
+                        return "now"
+                    
+                    # Check if it's a relative time string
+                    match = re.match(r"(\d+)([smhdw])-(ago|ahead)", timestamp.lower())
+                    if match:
+                        return timestamp  # Return relative time string as-is
+                    
+                    # Check if it's SQL timestamp format (YYYY-MM-DD HH:MM:SS) -> convert to ISO 8601
+                    try:
+                        for fmt in [
+                            "%Y-%m-%d %H:%M:%S.%f",
+                            "%Y-%m-%d %H:%M:%S",
+                        ]:
+                            try:
+                                dt = datetime.strptime(timestamp, fmt)
+                                # Convert to ISO 8601 format
+                                return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                            except ValueError:
                                 continue
-                            if ":" not in instance_id_str:
-                                raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'")
-                            space, external_id = instance_id_str.split(":", 1)
-                            space = space.strip()
-                            external_id = external_id.strip()
-                            if not space or not external_id:
-                                raise ValueError(f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty.")
-                            node_ids.append(NodeId(space=space, external_id=external_id))
-                        if not node_ids:
-                            raise ValueError("At least one valid instance_id is required")
-                        return node_ids
+                    except Exception:
+                        pass
+                    
+                    # If it looks like ISO 8601, return as-is
+                    if "T" in timestamp or timestamp.endswith("Z"):
+                        return timestamp
+                    
+                    # Otherwise, try to parse and convert
+                    try:
+                        for fmt in [
+                            "%Y-%m-%dT%H:%M:%S.%fZ",
+                            "%Y-%m-%dT%H:%M:%SZ",
+                            "%Y-%m-%dT%H:%M:%S",
+                        ]:
+                            try:
+                                dt = datetime.strptime(timestamp, fmt)
+                                return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                            except ValueError:
+                                continue
+                    except Exception:
+                        pass
+                    
+                    # If we can't parse it, return as-is (might be valid for CDF API)
+                    return timestamp
                 
-                node_ids = parse_instance_ids(instance_ids)
-            except ValueError as e:
-                sys.stderr.write(f"ERROR: {str(e)}\n")
+                # For other types, try to convert to string
+                return str(timestamp)
+            
+            before_str = timestamp_to_string(before) or "now"
+            include_status_bool = _extract_bool(include_status)
+            
+            # Parse instance_ids
+            node_ids = []
+            for instance_id_str in instance_ids_str.split(","):
+                instance_id_str = instance_id_str.strip()
+                if not instance_id_str:
+                    continue
+                if ":" not in instance_id_str:
+                    error_msg = f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'"
+                    error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+
+                    yield (None, None, None, None)
+
+                    return
+                space, external_id = instance_id_str.split(":", 1)
+                space = space.strip()
+                external_id = external_id.strip()
+                if not space or not external_id:
+                    error_msg = f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty."
+                    error_category = 'CONFIGURATION'
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+
+                    yield (None, None, None, None)
+
+                    return
+                node_ids.append({"space": space, "externalId": external_id})
+            
+            if not node_ids:
+                error_msg = "At least one valid instance_id is required"
+                error_category = 'CONFIGURATION'
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+
                 yield (None, None, None, None)
+
                 return
             
-            if not before:
-                before = "now"
+            # Get OAuth token (with caching)
+            try:
+                token, expires_at = _get_oauth_token(
+                    str(client_id_str),
+                    str(client_secret_str),
+                    str(tenant_id_str),
+                    str(cdf_cluster_str),
+                    self._token_cache,
+                )
+                # Cache token for next call
+                self._token_cache = {
+                    "access_token": token,
+                    "expires_at": expires_at,
+                }
+
+                yield (None, None, None, None)
+
+                return
             
             try:
-                # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve_latest(
-                    instance_id=node_ids,
-                    before=before,
-                    include_status=include_status,
-                )
-                
-                # Yield latest datapoints with space:external_id identifier
-                row_count = 0
-                for dps in datapoints_list:
-                    if dps is None:  # Time series not found
-                        continue
-                    
-                    # Extract space and external_id from instance_id for display
-                    if dps.instance_id:
-                        space = dps.instance_id.space
-                        ext_id = dps.instance_id.external_id
-                        ts_external_id = f"{space}:{ext_id}"
-                    else:
-                        # Fallback: try to get from external_id attribute
-                        ts_external_id = dps.external_id if hasattr(dps, 'external_id') and dps.external_id else None
-                    
-                    # Get the latest datapoint (first in the list)
-                    if len(dps) > 0:
-                        latest_dp = dps[0]
-                        # Convert milliseconds timestamp to datetime for PySpark TimestampType
-                        timestamp_dt = datetime.fromtimestamp(latest_dp.timestamp / 1000.0, tz=timezone.utc) if latest_dp.timestamp is not None else None
-                        yield (
-                            ts_external_id,
-                            timestamp_dt,
-                            latest_dp.value,
-                            latest_dp.status_code if include_status else None,
-                        )
-                        row_count += 1
-                
-                # If no rows were found, yield at least one row with None values
-                if row_count == 0:
-                    sys.stderr.write("[UDTF] ⚠ No latest datapoints found, yielding empty row to prevent 'end-of-input' error\n")
+                # Log query start (both stderr and stdout for Serverless SQL visibility)
+                query_start = f"[UDTF] Querying latest datapoints for {len(node_ids)} time series"
+                sys.stderr.write(f"{query_start}\n")
+                print(query_start)  # Also print to stdout for Serverless SQL visibility
+
                     yield (None, None, None, None)
-                        
-            except Exception as e:
-                error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}\n{traceback.format_exc()}"
-                sys.stderr.write(error_info)
+
+                    return
+
+                row_count = len(timestamps)
+
+                    yield (ts_external_id, timestamp_dt, val, status)
+
+
+                success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
+                sys.stderr.write(f"{success_msg}\n")
+                print(success_msg)  # Also print to stdout for Serverless SQL visibility
+
                 yield (None, None, None, None)
+
+                return
+                
         except Exception as outer_error:
+            # Last resort: if anything goes wrong, yield empty row
+            # Both stderr and stdout for Serverless SQL visibility
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
-            sys.stderr.write(f"{error_info}\n{traceback.format_exc()}\n")
-            yield (None, None, None, None)
+            sys.stderr.write(f"{error_info}\n")
+            print(error_info)  # Also print to stdout for Serverless SQL visibility
+
+            return
 

@@ -178,7 +178,7 @@ class CDFConnectionConfig(BaseModel):
 
         # Try tomli first (Python < 3.11), then tomllib (Python 3.11+)
         try:
-            import tomli
+            import tomli  # type: ignore[import-not-found]
 
             with toml_path.open("rb") as f:
                 toml_content = tomli.load(f)

@@ -38,12 +38,27 @@ class UDTFGenerationResult(BaseModel):
         """Get file path for a specific view_id.
 
         Args:
-            view_id: The external_id of the view
+            view_id: The external_id of the view (with or without _session/_catalog suffix)
 
         Returns:
-            Path to the generated file if found, None otherwise
+            Path to the generated file if found, None otherwise.
+            If both _session and _catalog versions exist, returns _session version.
         """
-        return self.generated_files.get(view_id)
+        # Try exact match first
+        if view_id in self.generated_files:
+            return self.generated_files[view_id]
+
+        # Try with _session suffix
+        session_key = f"{view_id}_session"
+        if session_key in self.generated_files:
+            return self.generated_files[session_key]
+
+        # Try with _catalog suffix
+        catalog_key = f"{view_id}_catalog"
+        if catalog_key in self.generated_files:
+            return self.generated_files[catalog_key]
+
+        return None
 
     def __getitem__(self, view_id: str) -> Path:
         """Allow dict-like access: result['view_id'].

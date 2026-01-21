@@ -49,4 +49,7 @@ class TestTemplateRendering:
         assert isinstance(sql, str)
         assert len(sql) > 0
         # Check for SQL keywords
-        assert "SELECT" in sql.upper() or "CREATE" in sql.upper()
+        assert "CREATE" in sql.upper() or "SELECT" in sql.upper()
+        # Check that all view properties are included as NULL parameters
+        for prop_name in sample_view.properties.keys():
+            assert f"{prop_name} => NULL" in sql or f"{prop_name}=>NULL" in sql.replace(" ", "")

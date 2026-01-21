@@ -2,19 +2,22 @@
 
 ## Basic SQL Queries
 
-Once registered, UDTFs can be queried using standard SQL. All UDTFs require CDF credentials as parameters:
+Once registered, UDTFs can be queried using standard SQL. All UDTFs require CDF credentials as parameters.
+
+⚠️ **Important for Unity Catalog**: When querying Unity Catalog registered UDTFs, **ALL parameters must be explicitly provided in SQL**, even if they have default values in Python. Unity Catalog does not recognize Python default values.
 
 ```sql
--- Query a Data Model UDTF
-SELECT * FROM smallboat_udtf(
-    'your-client-id',
-    'your-client-secret',
-    'your-tenant-id',
-    'westeurope-1',
-    'your-project',
-    NULL,  -- name filter
-    NULL,  -- description filter
-    ...
+-- Query a Data Model UDTF (complete example with all parameters)
+SELECT * FROM catalog.schema.small_boat_udtf(
+    client_id     => SECRET('scope', 'client_id'),
+    client_secret => SECRET('scope', 'client_secret'),
+    tenant_id     => SECRET('scope', 'tenant_id'),
+    cdf_cluster   => SECRET('scope', 'cdf_cluster'),
+    project       => SECRET('scope', 'project'),
+    name          => NULL,  -- All view property parameters must be provided
+    description   => NULL,
+    tags          => NULL,
+    -- ... all other view property parameters
 ) LIMIT 10;
 ```
 

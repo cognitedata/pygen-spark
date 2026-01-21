@@ -1,0 +1,387 @@
+{% if not skip_docstring %}
+"""Protobuf parser module for time series datapoints using scalar parsing.
+
+Embeds protobuf message definitions directly to avoid dependency on cognite-sdk.
+Uses google.protobuf library (available in DBR 17.3 LTS).
+"""
+
+{% endif %}
+import sys
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    pass
+
+# Module-level cache for protobuf availability (set lazily on first use)
+_PROTOBUF_AVAILABLE: bool | None = None
+_PROTOBUF_CLASSES: dict[str, type] | None = None
+
+
+def _get_protobuf_classes() -> tuple[bool, dict[str, type]]:
+    """Build protobuf message definitions from embedded descriptors.
+    
+    This embeds the protobuf message definitions directly, avoiding
+    the need for cognite-sdk to be installed in the UDTF environment.
+    Uses google.protobuf library which is available in DBR 17.3 LTS.
+    
+    Returns:
+        Tuple of (is_available, classes_dict) where classes_dict contains:
+        - DataPointListResponse
+        - DataPointListItem
+        - AggregateDatapoint
+        - InstanceId
+        - NumericDatapoint
+        - StringDatapoint
+        - NumericDatapoints
+        - StringDatapoints
+        - AggregateDatapoints
+    """
+    nonlocal _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
+    
+    # Return cached result if already loaded
+    if _PROTOBUF_AVAILABLE is not None and _PROTOBUF_CLASSES is not None:
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
+    
+    try:
+        from google.protobuf import descriptor as _descriptor
+        from google.protobuf import descriptor_pool as _descriptor_pool
+        from google.protobuf import symbol_database as _symbol_database
+        from google.protobuf.internal import builder as _builder
+        
+        # Serialized descriptor for data_points.proto
+        # Extracted from: cognite-sdk-python/cognite/client/_proto/data_points_pb2.py
+        DATA_POINTS_DESCRIPTOR = (
+            b'\n\x11data_points.proto\x12\x1fcom.cognite.v1.timeseries.proto"&\n\x06Status'
+            b'\x12\x0c\n\x04code\x18\x01 \x01(\x03\x12\x0e\n\x06symbol\x18\x02 \x01(\t"'
+            b'\x80\x01\n\x10NumericDatapoint\x12\x11\n\ttimestamp\x18\x01 \x01(\x03\x12\r'
+            b'\n\x05value\x18\x02 \x01(\x01\x12\x37\n\x06status\x18\x03 \x01(\x0b\x32\'.'
+            b'com.cognite.v1.timeseries.proto.Status\x12\x11\n\tnullValue\x18\x04 \x01(\x08'
+            b'"Z\n\x11NumericDatapoints\x12\x45\n\ndatapoints\x18\x01 \x03(\x0b\x32\x31.'
+            b'com.cognite.v1.timeseries.proto.NumericDatapoint"\x7f\n\x0fStringDatapoint'
+            b'\x12\x11\n\ttimestamp\x18\x01 \x01(\x03\x12\r\n\x05value\x18\x02 \x01(\t'
+            b'\x12\x37\n\x06status\x18\x03 \x01(\x0b\x32\'.com.cognite.v1.timeseries.proto.'
+            b'Status\x12\x11\n\tnullValue\x18\x04 \x01(\x08"X\n\x10StringDatapoints\x12'
+            b'\x44\n\ndatapoints\x18\x01 \x03(\x0b\x32\x30.com.cognite.v1.timeseries.proto.'
+            b'StringDatapoint"\x83\x04\n\x12AggregateDatapoint\x12\x11\n\ttimestamp\x18'
+            b'\x01 \x01(\x03\x12\x0f\n\x07average\x18\x02 \x01(\x01\x12\x0b\n\x03max\x18'
+            b'\x03 \x01(\x01\x12\x0b\n\x03min\x18\x04 \x01(\x01\x12\r\n\x05count\x18\x05'
+            b' \x01(\x01\x12\x0b\n\x03sum\x18\x06 \x01(\x01\x12\x15\n\rinterpolation\x18'
+            b'\x07 \x01(\x01\x12\x19\n\x11stepInterpolation\x18\x08 \x01(\x01\x12\x1a\n'
+            b'\x12continuousVariance\x18\t \x01(\x01\x12\x18\n\x10discreteVariance\x18\n'
+            b' \x01(\x01\x12\x16\n\x0etotalVariation\x18\x0b \x01(\x01\x12\x11\n\tcountGood'
+            b'\x18\x0c \x01(\x01\x12\x16\n\x0ecountUncertain\x18\r \x01(\x01\x12\x10\n'
+            b'\x08countBad\x18\x0e \x01(\x01\x12\x14\n\x0cdurationGood\x18\x0f \x01(\x01'
+            b'\x12\x19\n\x11durationUncertain\x18\x10 \x01(\x01\x12\x13\n\x0bdurationBad'
+            b'\x18\x11 \x01(\x01\x12G\n\x0cmaxDatapoint\x18\x12 \x01(\x0b\x32\x31.com.'
+            b'cognite.v1.timeseries.proto.NumericDatapoint\x12G\n\x0cminDatapoint\x18'
+            b'\x13 \x01(\x0b\x32\x31.com.cognite.v1.timeseries.proto.NumericDatapoint"'
+            b'^\n\x13AggregateDatapoints\x12G\n\ndatapoints\x18\x01 \x03(\x0b\x32\x33.com.'
+            b'cognite.v1.timeseries.proto.AggregateDatapoint"/\n\nInstanceId\x12\r\n'
+            b'\x05space\x18\x01 \x01(\t\x12\x12\n\nexternalId\x18\x02 \x01(\tB\x02P\x01'
+            b'b\x06proto3'
+        )
+        
+        # Serialized descriptor for data_point_list_response.proto
+        # Extracted from: cognite-sdk-python/cognite/client/_proto/data_point_list_response_pb2.py
+        DATA_POINT_LIST_RESPONSE_DESCRIPTOR = (
+            b'\n\x1edata_point_list_response.proto\x12\x1fcom.cognite.v1.timeseries.proto'
+            b'\x1a\x11data_points.proto"\xd6\x03\n\x11DataPointListItem\x12\n\n\x02id'
+            b'\x18\x01 \x01(\x03\x12\x12\n\nexternalId\x18\x02 \x01(\t\x12?\n\ninstanceId'
+            b'\x18\x0b \x01(\x0b\x32+.com.cognite.v1.timeseries.proto.InstanceId\x12\x10'
+            b'\n\x08isString\x18\x06 \x01(\x08\x12\x0e\n\x06isStep\x18\x07 \x01(\x08'
+            b'\x12\x0c\n\x04unit\x18\x08 \x01(\t\x12\x12\n\nnextCursor\x18\t \x01(\t'
+            b'\x12\x16\n\x0eunitExternalId\x18\n \x01(\t\x12O\n\x11numericDatapoints'
+            b'\x18\x03 \x01(\x0b\x32\x32.com.cognite.v1.timeseries.proto.NumericDatapoints'
+            b'H\x00\x12M\n\x10stringDatapoints\x18\x04 \x01(\x0b\x32\x31.com.cognite.v1.'
+            b'timeseries.proto.StringDatapointsH\x00\x12S\n\x13aggregateDatapoints\x18'
+            b'\x05 \x01(\x0b\x32\x34.com.cognite.v1.timeseries.proto.AggregateDatapoints'
+            b'H\x00\x42\x0f\n\rdatapointType"Z\n\x15DataPointListResponse\x12\x41\n'
+            b'\x05items\x18\x01 \x03(\x0b\x32\x32.com.cognite.v1.timeseries.proto.'
+            b'DataPointListItemB\x02P\x01b\x06proto3'
+        )
+        
+        # Register descriptors in the descriptor pool
+        _sym_db = _symbol_database.Default()
+        
+        # Add data_points.proto first (it's imported by data_point_list_response.proto)
+        data_points_file_desc = _descriptor_pool.Default().AddSerializedFile(DATA_POINTS_DESCRIPTOR)
+        data_point_list_response_file_desc = _descriptor_pool.Default().AddSerializedFile(DATA_POINT_LIST_RESPONSE_DESCRIPTOR)
+        
+        # Use a local namespace dictionary to store the built classes
+        _protobuf_namespace = {}
+        
+        # Build message and enum descriptors
+        _builder.BuildMessageAndEnumDescriptors(data_points_file_desc, _protobuf_namespace)
+        _builder.BuildMessageAndEnumDescriptors(data_point_list_response_file_desc, _protobuf_namespace)
+        
+        # Build top-level descriptors and messages
+        _builder.BuildTopDescriptorsAndMessages(data_points_file_desc, 'data_points_pb2', _protobuf_namespace)
+        _builder.BuildTopDescriptorsAndMessages(data_point_list_response_file_desc, 'data_point_list_response_pb2', _protobuf_namespace)
+        
+        # Extract the message classes from the namespace
+        # These are created by BuildTopDescriptorsAndMessages
+        DataPointListResponse = _protobuf_namespace.get('DataPointListResponse')
+        DataPointListItem = _protobuf_namespace.get('DataPointListItem')
+        NumericDatapoint = _protobuf_namespace.get('NumericDatapoint')
+        StringDatapoint = _protobuf_namespace.get('StringDatapoint')
+        AggregateDatapoint = _protobuf_namespace.get('AggregateDatapoint')
+        InstanceId = _protobuf_namespace.get('InstanceId')
+        NumericDatapoints = _protobuf_namespace.get('NumericDatapoints')
+        StringDatapoints = _protobuf_namespace.get('StringDatapoints')
+        AggregateDatapoints = _protobuf_namespace.get('AggregateDatapoints')
+        
+        if not all([DataPointListResponse, DataPointListItem, NumericDatapoint, StringDatapoint, AggregateDatapoint, InstanceId]):
+            raise ImportError("Failed to build all required protobuf message classes")
+        
+        _PROTOBUF_AVAILABLE = True
+        _PROTOBUF_CLASSES = {
+            "DataPointListResponse": DataPointListResponse,
+            "DataPointListItem": DataPointListItem,
+            "AggregateDatapoint": AggregateDatapoint,
+            "InstanceId": InstanceId,
+            "NumericDatapoint": NumericDatapoint,
+            "StringDatapoint": StringDatapoint,
+            "NumericDatapoints": NumericDatapoints,
+            "StringDatapoints": StringDatapoints,
+            "AggregateDatapoints": AggregateDatapoints,
+        }
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
+        
+    except ImportError as e:
+        # google.protobuf not available
+        _PROTOBUF_AVAILABLE = False
+        sys.stderr.write(f"[UDTF] ERROR: google.protobuf not available: {e}\n")
+        # Return dummy classes
+        class DataPointListItem:
+            def __init__(self) -> None:
+                self.numericDatapoints = None
+                self.stringDatapoints = None
+                self.aggregateDatapoints = None
+            def HasField(self, field_name: str) -> bool:
+                return False
+        
+        class DataPointListResponse:
+            def __init__(self) -> None:
+                self.items = []
+            def MergeFromString(self, data: bytes) -> None:
+                raise NotImplementedError("Protobuf not available")
+        
+        class InstanceId:
+            def __init__(self) -> None:
+                self.space = ""
+                self.externalId = ""
+        
+        class NumericDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.value = 0.0
+        
+        class StringDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.value = ""
+        
+        class AggregateDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.average = 0.0
+                self.max = 0.0
+                self.min = 0.0
+                self.count = 0.0
+                self.sum = 0.0
+        
+        _PROTOBUF_CLASSES = {
+            "DataPointListResponse": DataPointListResponse,
+            "DataPointListItem": DataPointListItem,
+            "AggregateDatapoint": AggregateDatapoint,
+            "InstanceId": InstanceId,
+            "NumericDatapoint": NumericDatapoint,
+            "StringDatapoint": StringDatapoint,
+            "NumericDatapoints": None,
+            "StringDatapoints": None,
+            "AggregateDatapoints": None,
+        }
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
+    except Exception as e:
+        # Other error building protobuf classes
+        _PROTOBUF_AVAILABLE = False
+        sys.stderr.write(f"[UDTF] ERROR: Failed to build protobuf classes: {e}\n")
+        # Return dummy classes (same as ImportError case)
+        class DataPointListItem:
+            def __init__(self) -> None:
+                self.numericDatapoints = None
+                self.stringDatapoints = None
+                self.aggregateDatapoints = None
+            def HasField(self, field_name: str) -> bool:
+                return False
+        
+        class DataPointListResponse:
+            def __init__(self) -> None:
+                self.items = []
+            def MergeFromString(self, data: bytes) -> None:
+                raise NotImplementedError("Protobuf not available")
+        
+        class InstanceId:
+            def __init__(self) -> None:
+                self.space = ""
+                self.externalId = ""
+        
+        class NumericDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.value = 0.0
+        
+        class StringDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.value = ""
+        
+        class AggregateDatapoint:
+            def __init__(self) -> None:
+                self.timestamp = 0
+                self.average = 0.0
+                self.max = 0.0
+                self.min = 0.0
+                self.count = 0.0
+                self.sum = 0.0
+        
+        _PROTOBUF_CLASSES = {
+            "DataPointListResponse": DataPointListResponse,
+            "DataPointListItem": DataPointListItem,
+            "AggregateDatapoint": AggregateDatapoint,
+            "InstanceId": InstanceId,
+            "NumericDatapoint": NumericDatapoint,
+            "StringDatapoint": StringDatapoint,
+            "NumericDatapoints": None,
+            "StringDatapoints": None,
+            "AggregateDatapoints": None,
+        }
+        return _PROTOBUF_AVAILABLE, _PROTOBUF_CLASSES
+
+
+def _parse_protobuf_to_series(
+    response_content: bytes,
+    aggregates: str | None = None,
+) -> tuple[list[int], list[float | str], str]:
+    """Parse protobuf response into timestamp/value lists (scalar path).
+
+    Args:
+        response_content: Protobuf binary response from CDF API
+        aggregates: Aggregate type if requesting aggregates (e.g., "average", "max", "min")
+
+    Returns:
+        Tuple of (timestamps, values, debug_info_json)
+    """
+    import json
+    
+    # Initialize debug info
+    debug_info = {
+        "protobuf_available": False,
+        "items_count": 0,
+        "numeric_datapoints_count": 0,
+        "aggregate_datapoints_count": 0,
+        "string_datapoints_count": 0,
+        "total_extracted": 0,
+        "error": None,
+    }
+    
+    protobuf_available, protobuf_classes = _get_protobuf_classes()
+    DataPointListResponse = protobuf_classes["DataPointListResponse"]
+
+    debug_info["protobuf_available"] = protobuf_available
+
+    if not protobuf_available:
+        debug_info["error"] = "Protobuf message definitions not available - will fallback to JSON"
+        sys.stderr.write(f"[UDTF] ERROR: {debug_info['error']}\n")
+        raise ImportError(debug_info["error"])
+
+    if aggregates:
+        allowed_aggregates = {
+            "average",
+            "max",
+            "min",
+            "count",
+            "sum",
+            "interpolation",
+            "stepinterpolation",
+            "continuousvariance",
+            "discretevariance",
+            "totalvariation",
+        }
+        agg_name = aggregates.lower()
+        if agg_name not in allowed_aggregates:
+            error_msg = f"Unknown aggregate '{aggregates}'"
+            debug_info["error"] = error_msg
+            sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
+            return [], [], json.dumps(debug_info)
+
+    timestamps: list[int] = []
+    values: list[float | str] = []
+
+    # Use MergeFromString() like the SDK: https://github.com/cognitedata/cognite-sdk-python/blob/main/cognite/client/_api/datapoints.py#L121
+    proto_response = DataPointListResponse()
+    try:
+        proto_response.MergeFromString(response_content)
+    except Exception as e:
+        error_msg = f"Failed to parse protobuf: {e}"
+        debug_info["error"] = error_msg
+        sys.stderr.write(f"[UDTF] ERROR: {error_msg}\n")
+        raise ValueError(error_msg) from e
+
+    # Debug logging to help diagnose issues
+    debug_info["items_count"] = len(proto_response.items)
+    sys.stderr.write(f"[UDTF] DEBUG: Protobuf response contains {len(proto_response.items)} items\n")
+
+    # Process items exactly like SDK does - check fields using HasField() for oneof fields
+    for item in proto_response.items:
+        # Check for numericDatapoints (oneof field - use HasField)
+        if item.HasField('numericDatapoints'):
+            count = len(item.numericDatapoints.datapoints)
+            debug_info["numeric_datapoints_count"] += count
+            for dp in item.numericDatapoints.datapoints:
+                timestamps.append(dp.timestamp)
+                values.append(dp.value)
+        # Check for aggregateDatapoints (oneof field - use HasField)
+        elif item.HasField('aggregateDatapoints'):
+            count = len(item.aggregateDatapoints.datapoints)
+            debug_info["aggregate_datapoints_count"] += count
+            for dp in item.aggregateDatapoints.datapoints:
+                timestamps.append(dp.timestamp)
+                if aggregates:
+                    agg_name = aggregates.lower()
+                    if agg_name == 'average':
+                        values.append(dp.average)
+                    elif agg_name == 'max':
+                        values.append(dp.max)
+                    elif agg_name == 'min':
+                        values.append(dp.min)
+                    elif agg_name == 'count':
+                        values.append(float(dp.count))
+                    elif agg_name == 'sum':
+                        values.append(dp.sum)
+                    elif agg_name == 'interpolation':
+                        values.append(dp.interpolation)
+                    elif agg_name == 'stepinterpolation':
+                        values.append(dp.stepInterpolation)
+                    elif agg_name == 'continuousvariance':
+                        values.append(dp.continuousVariance)
+                    elif agg_name == 'discretevariance':
+                        values.append(dp.discreteVariance)
+                    elif agg_name == 'totalvariation':
+                        values.append(dp.totalVariation)
+                else:
+                    values.append(dp.average)
+        # Check for stringDatapoints (oneof field - use HasField)
+        elif item.HasField('stringDatapoints'):
+            count = len(item.stringDatapoints.datapoints)
+            debug_info["string_datapoints_count"] += count
+            for dp in item.stringDatapoints.datapoints:
+                timestamps.append(dp.timestamp)
+                values.append(dp.value)
+
+    # Debug logging
+    debug_info["total_extracted"] = len(timestamps)
+    sys.stderr.write(f"[UDTF] DEBUG: Extracted {len(timestamps)} datapoints from protobuf\n")
+
+    return timestamps, values, json.dumps(debug_info)
+

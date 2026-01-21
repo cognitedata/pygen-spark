@@ -18,6 +18,7 @@ from cognite.pygen_spark.models import (
     ViewSQLGenerationResult,
 )
 from cognite.pygen_spark.udtf_generator import SparkMultiAPIGenerator
+from cognite.pygen_spark.utils import _check_pyspark_version
 
 if TYPE_CHECKING:
     from cognite.client.data_classes.data_modeling import View
@@ -53,7 +54,13 @@ class SparkUDTFGenerator(SDKGenerator):
             top_level_package: Top-level Python package name for generated code
             client_name: Name of the client class (required by parent SDKGenerator)
             **kwargs: Additional arguments passed to parent SDKGenerator
+
+        Raises:
+            RuntimeError: If PySpark version is less than 4.0.0
         """
+        # Check PySpark version before proceeding
+        _check_pyspark_version()
+
         # Load data model if it's an identifier
         loaded_data_model = self._load_data_model(data_model, client)
 
@@ -113,6 +120,10 @@ class SparkUDTFGenerator(SDKGenerator):
     def generate_udtfs(self, data_model: DataModel | None = None) -> UDTFGenerationResult:
         """Generate UDTF functions for all Views in a Data Model.
 
+        Generates two versions of each UDTF:
+        - session_scoped/: With analyze() method (for session-scoped registration)
+        - catalog_registered/: Without analyze() method (for Unity Catalog registration)
+
         Args:
             data_model: Optional DataModel identifier. If None, uses the data model from __init__.
 
@@ -129,17 +140,35 @@ class SparkUDTFGenerator(SDKGenerator):
         # Reuse pygen's View parsing (same pattern as pygen)
         views = self._load_views(data_model_obj)
 
-        # Generate UDTF for each View
+        # Generate UDTF for each View (both versions)
         generated_files: dict[str, Path] = {}
         for view in views:
-            udtf_code = self.udtf_generator.generate_udtf(view)
-            file_path = self._write_udtf_file(view, udtf_code)
-            generated_files[view.external_id] = file_path
+            # Generate session-scoped version (without @udtf decorator and analyze())
+            # The @udtf decorator and analyze method cause PySpark to import
+            # pyspark.sql.connect.udtf during serialization, which triggers a circular
+            # import bug in PySpark Connect. Removing them allows registration to work.
+            # The decorator will be applied during registration instead.
+            udtf_code_session = self.udtf_generator.generate_udtf(
+                view,
+                include_analyze=False,  # Disabled to avoid circular import during serialization
+                use_udtf_decorator=False,  # Disabled - will be applied during registration
+            )
+            file_path_session = self._write_udtf_file(view, udtf_code_session, subdirectory="session_scoped")
+            generated_files[f"{view.external_id}_session"] = file_path_session
+
+            # Generate catalog-registered version (with analyze() for UC validation)
+            udtf_code_catalog = self.udtf_generator.generate_udtf(
+                view,
+                include_analyze=True,
+                use_udtf_decorator=False,
+            )
+            file_path_catalog = self._write_udtf_file(view, udtf_code_catalog, subdirectory="catalog_registered")
+            generated_files[f"{view.external_id}_catalog"] = file_path_catalog
 
         return UDTFGenerationResult(
             generated_files=generated_files,
             output_dir=self.output_dir,
-            total_count=len(generated_files),
+            total_count=len(views),  # Count views, not files (each view generates 2 files)
         )
 
     def generate_views(
@@ -192,18 +221,22 @@ class SparkUDTFGenerator(SDKGenerator):
         # data_model.views is a list, not a dict
         return list(data_model.views)
 
-    def _write_udtf_file(self, view: View, udtf_code: str) -> Path:
+    def _write_udtf_file(self, view: View, udtf_code: str, subdirectory: str = "") -> Path:
         """Write UDTF code to a file.
 
         Args:
             view: View object
             udtf_code: Generated UDTF Python code
+            subdirectory: Optional subdirectory within output_dir (e.g., "session_scoped", "catalog_registered")
 
         Returns:
             Path to the written file
         """
         # Create output directory structure
-        udtf_dir = self.output_dir / self.top_level_package
+        if subdirectory:
+            udtf_dir = self.output_dir / subdirectory / self.top_level_package
+        else:
+            udtf_dir = self.output_dir / self.top_level_package
         udtf_dir.mkdir(parents=True, exist_ok=True)
 
         # Write UDTF file
@@ -218,12 +251,9 @@ class SparkUDTFGenerator(SDKGenerator):
     ) -> UDTFGenerationResult:
         """Generate time series UDTF files using templates.
 
-        Generates the three standard time series UDTFs:
-        - time_series_datapoints_udtf
-        - time_series_datapoints_long_udtf
-        - time_series_latest_datapoints_udtf
-
-        Uses the same template-based generation pattern as data model UDTFs for consistency.
+        Generates two versions of each time series UDTF:
+        - session_scoped/: With analyze() method (for session-scoped registration)
+        - catalog_registered/: Without analyze() method (for Unity Catalog registration)
 
         Args:
             output_dir: Optional output directory. If None, uses self.output_dir.
@@ -235,13 +265,11 @@ class SparkUDTFGenerator(SDKGenerator):
             output_dir = self.output_dir
 
         output_dir = Path(output_dir)
-        udtf_dir = output_dir / self.top_level_package
-        udtf_dir.mkdir(parents=True, exist_ok=True)
 
         # Map of template name to output filename
         time_series_udtfs = {
             "time_series_datapoints_udtf": "time_series_datapoints_udtf.py.jinja",
-            "time_series_datapoints_long_udtf": "time_series_datapoints_long_udtf.py.jinja",
+            "time_series_datapoints_detailed_udtf": "time_series_datapoints_detailed_udtf.py.jinja",
             "time_series_latest_datapoints_udtf": "time_series_latest_datapoints_udtf.py.jinja",
         }
 
@@ -249,29 +277,46 @@ class SparkUDTFGenerator(SDKGenerator):
 
         # Use the same template environment as data model UDTFs
         for file_name, template_name in time_series_udtfs.items():
-            # Load template using the same environment as data model UDTFs
             template = self.udtf_generator.env.get_template(template_name)
 
-            # Render template (no variables needed for time series UDTFs)
-            udtf_code = template.render()
-
-            # Format with Black if available (same as data model UDTFs)
+            # Generate session-scoped version (without @udtf decorator and analyze())
+            # The @udtf decorator and analyze method cause PySpark to import
+            # pyspark.sql.connect.udtf during serialization, which triggers a circular
+            # import bug in PySpark Connect. Removing them allows registration to work.
+            # The decorator will be applied during registration instead.
+            code_session = template.render(include_analyze=False, use_udtf_decorator=False)
+            # Format with Black
             try:
                 import black
 
-                udtf_code = black.format_str(udtf_code, mode=black.Mode(line_length=120))
-            except ImportError:
-                pass
-            except Exception:
+                code_session = black.format_str(code_session, mode=black.Mode(line_length=120))
+            except (ImportError, Exception):
                 pass
 
-            # Write to file using the same pattern as data model UDTFs
-            file_path = udtf_dir / f"{file_name}.py"
-            file_path.write_text(udtf_code, encoding="utf-8")
-            generated_files[file_name] = file_path
+            udtf_dir_session = output_dir / "session_scoped" / self.top_level_package
+            udtf_dir_session.mkdir(parents=True, exist_ok=True)
+            file_path_session = udtf_dir_session / f"{file_name}.py"
+            file_path_session.write_text(code_session, encoding="utf-8")
+            generated_files[f"{file_name}_session"] = file_path_session
+
+            # Generate catalog-registered version (with analyze() for UC validation)
+            code_catalog = template.render(include_analyze=True, use_udtf_decorator=False)
+            # Format with Black
+            try:
+                import black
+
+                code_catalog = black.format_str(code_catalog, mode=black.Mode(line_length=120))
+            except (ImportError, Exception):
+                pass
+
+            udtf_dir_catalog = output_dir / "catalog_registered" / self.top_level_package
+            udtf_dir_catalog.mkdir(parents=True, exist_ok=True)
+            file_path_catalog = udtf_dir_catalog / f"{file_name}.py"
+            file_path_catalog.write_text(code_catalog, encoding="utf-8")
+            generated_files[f"{file_name}_catalog"] = file_path_catalog
 
         return UDTFGenerationResult(
             generated_files=generated_files,
             output_dir=output_dir,
-            total_count=len(generated_files),
+            total_count=len(time_series_udtfs),  # Count UDTFs, not files
         )

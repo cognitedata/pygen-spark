@@ -45,11 +45,19 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         # Note: We don't need to store data_model anymore - views are independent
         # and we use view.as_id() directly in the template
 
-    def generate_udtf(self, view: View) -> str:
+    def generate_udtf(
+        self,
+        view: View,
+        include_analyze: bool = True,
+        use_udtf_decorator: bool = True,
+    ) -> str:
         """Generate Python UDTF code for a View.
 
         Args:
             view: View object from CDF Data Model
+            include_analyze: If True, includes analyze() method (for session-scoped).
+                            If False, omits analyze() (for Unity Catalog).
+            use_udtf_decorator: If True, adds @udtf decorator to the class.
 
         Returns:
             Generated UDTF Python code as string (formatted with Black)
@@ -69,6 +77,8 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         code = template.render(
             view=view,
             properties=udtf_fields,  # Pass UDTFField objects (like pygen-main passes Field objects)
+            include_analyze=include_analyze,  # Pass include_analyze to template
+            use_udtf_decorator=use_udtf_decorator,
         )
 
         # Format the generated code using Black (like pygen-main does)
@@ -81,7 +91,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             # If black is not available, just return the code as-is
             # This allows the code to work even if black is not installed
             pass
-        except Exception:
+        except (ValueError, SyntaxError, TypeError):
             # If formatting fails for any reason, return the code as-is
             # This prevents formatting errors from breaking code generation
             pass
@@ -104,6 +114,8 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         Returns:
             SQL CREATE VIEW statement
         """
+        from cognite.pygen_spark.utils import to_udtf_function_name
+
         template = self.env.get_template("view_sql.py.jinja")
 
         # Pass catalog and schema to template, or use placeholders if not provided
@@ -111,7 +123,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         template_vars = {
             "view": view,
             "secret_scope": secret_scope,
-            "udtf_name": f"{view.external_id}_udtf",
+            "udtf_name": to_udtf_function_name(view.external_id),  # Use consistent snake_case conversion
         }
 
         # Only add catalog/schema if provided (otherwise template will use placeholders)

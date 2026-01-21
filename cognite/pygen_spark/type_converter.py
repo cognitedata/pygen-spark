@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from cognite.pygen_spark.utils import _check_pyspark_version
+
 try:
     from pyspark.sql.types import (
         ArrayType,
@@ -16,12 +18,20 @@ try:
         DataType,
         DateType,
         DoubleType,
+        IntegerType,
         LongType,
         StringType,
         TimestampType,
     )
+
+    # Check version after successful import
+    _check_pyspark_version()
 except ImportError as e:
-    raise ImportError("PySpark is required but not available. Install with: pip install pyspark") from e
+    raise ImportError(
+        "PySpark is required but not available. "
+        "Please ensure PySpark 4.0.0+ is installed in your environment. "
+        "On Databricks, PySpark is provided by the runtime."
+    ) from e
 
 if TYPE_CHECKING:
     pass
@@ -86,7 +96,7 @@ class TypeConverter:
         """
         if isinstance(spark_type, StringType):
             return "STRING"
-        elif isinstance(spark_type, LongType):
+        elif isinstance(spark_type, (LongType, IntegerType)):
             return "INT"
         elif isinstance(spark_type, DoubleType):
             return "DOUBLE"

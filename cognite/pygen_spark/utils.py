@@ -205,3 +205,53 @@ def to_udtf_function_name(view_id: str) -> str:
     # Use pygen-main's to_snake for consistent conversion
     snake_case = to_snake(view_id)
     return f"{snake_case}_udtf"
+
+
+def _check_pyspark_version() -> None:
+    """Check that PySpark version is 4.0.0 or higher.
+
+    Raises:
+        ImportError: If PySpark is not available
+        RuntimeError: If PySpark version is less than 4.0.0
+    """
+    try:
+        import pyspark
+    except ImportError:
+        raise ImportError(
+            "PySpark is required but not available. "
+            "Please ensure PySpark 4.0.0+ is installed in your environment. "
+            "On Databricks, PySpark is provided by the runtime."
+        ) from None
+
+    # Parse version string (e.g., "4.0.0", "4.1.0", "3.5.0")
+    version_str = pyspark.__version__
+    try:
+        from packaging import version
+
+        pyspark_version = version.parse(version_str)
+        min_version = version.parse("4.0.0")
+
+        if pyspark_version < min_version:
+            raise RuntimeError(
+                f"PySpark 4.0.0+ is required for vectorized UDTF support, but version {version_str} is installed. "
+                f"Please upgrade to PySpark 4.0.0 or higher. "
+                f"On Databricks, use Databricks Runtime 15.0+ (first DBR with Spark 4.0)."
+            )
+    except ImportError:
+        # Fallback if packaging is not available - do simple string comparison
+        # This is less robust but better than nothing
+        major_minor = version_str.split(".")[:2]
+        if len(major_minor) >= 2:
+            try:
+                major = int(major_minor[0])
+                minor = int(major_minor[1])
+                if major < 4 or (major == 4 and minor < 0):
+                    raise RuntimeError(
+                        f"PySpark 4.0.0+ is required for vectorized UDTF support, "
+                        f"but version {version_str} is installed. "
+                        f"Please upgrade to PySpark 4.0.0 or higher. "
+                        f"On Databricks, use Databricks Runtime 15.0+ (first DBR with Spark 4.0)."
+                    )
+            except (ValueError, IndexError):
+                # If version parsing fails, assume it's okay (better than crashing)
+                pass
