@@ -54,10 +54,11 @@ class TimeSeriesDatapointsUDTF:
     
     @staticmethod
     def outputSchema() -> StructType:
-        """Return the output schema: (timestamp, value)."""
+        """Return the output schema: (timestamp, value, _error)."""
         fields = [
             StructField("timestamp", TimestampType(), nullable=True),
             StructField("value", DoubleType(), nullable=True),
+            StructField("_error", StringType(), nullable=True),
         ]
         return StructType(fields)
     
@@ -258,7 +259,7 @@ class TimeSeriesDatapointsUDTF:
             # Extract scalar values from Python inputs
             # Note: Don't check for None before extraction - SECRET() returns PySpark Column objects, not None
 
-                yield (None, None)
+                yield (None, None, "Missing required parameters: client_id, client_secret, tenant_id, cdf_cluster, or project")
 
                 return
             
@@ -268,7 +269,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None)
+                yield (None, None, f"{error_category}: {error_msg}")
 
                 return
             
@@ -278,7 +279,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None)
+                yield (None, None, f"{error_category}: {error_msg}")
 
                 return
             
@@ -290,7 +291,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None)
+                yield (None, None, f"{error_category}: {error_msg}")
 
                 return
             
@@ -317,7 +318,7 @@ class TimeSeriesDatapointsUDTF:
                     error_category = "CONFIGURATION"
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                    yield (None, None)
+                    yield (None, None, f"{error_category}: {error_msg}")
 
                     return
             
@@ -441,7 +442,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = "CONFIGURATION"
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None)
+                yield (None, None, f"{error_category}: {error_msg}")
 
                 return
             
@@ -459,8 +460,12 @@ class TimeSeriesDatapointsUDTF:
                     "access_token": token,
                     "expires_at": expires_at,
                 }
+            except Exception as token_error:
+                error_msg = f"Failed to acquire OAuth token: {str(token_error)}"
+                error_category = _classify_error(None, token_error)
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None)
+                yield (None, None, f"{error_category}: {error_msg}")
 
                 return
             
@@ -513,14 +518,20 @@ class TimeSeriesDatapointsUDTF:
                         accept_protobuf=True,  # Request protobuf response!
                     )
                     
+                    # Parse response (protobuf or JSON)
+                    timestamps, values, _ = _parse_protobuf_to_series(response.content, aggregates_str)
+                except Exception as parse_error:
+                    error_msg = f"Failed to parse response: {str(parse_error)}"
+                    error_category = _classify_error(None, parse_error)
+                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                    yield (None, None)
+                    yield (None, None, f"{error_category}: {error_msg}")
 
                     return
 
                 row_count = len(timestamps)
 
-                    yield (timestamp_dt, val)
+                    yield (timestamp_dt, val, None)
 
 
                 # Log success (both stderr and stdout for Serverless SQL visibility)
@@ -528,18 +539,16 @@ class TimeSeriesDatapointsUDTF:
                 sys.stderr.write(f"{success_msg}\n")
                 print(success_msg)  # Also print to stdout for Serverless SQL visibility
 
-                yield (None, None)
-
                 return
                 
         except Exception as outer_error:
-            # Last resort: if anything goes wrong, yield empty row to prevent zero rows
+            # Last resort: if anything goes wrong, yield error row
             # Both stderr and stdout for Serverless SQL visibility
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n")
             print(error_info)  # Also print to stdout for Serverless SQL visibility
 
-            yield (None, None)
+            yield (None, None, error_info)
 
             return
 
