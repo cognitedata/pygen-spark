@@ -42,11 +42,11 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             trim_blocks=False,
             lstrip_blocks=False,
         )
-        
+
         # Add custom filter to escape Python strings for use in docstrings and string literals
         def escape_python_string(value: str | None) -> str:
             """Escape a string for safe use in Python docstrings.
-            
+
             Handles quotes, newlines, and other special characters that could break
             Python string literals. For docstrings (triple-quoted), we replace problematic
             characters with safe alternatives.
@@ -65,11 +65,11 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             while "  " in escaped:
                 escaped = escaped.replace("  ", " ")
             return escaped.strip()
-        
+
         # Add filter to escape strings for use in Python string literals (with quotes)
         def escape_python_literal(value: str | None) -> str:
             """Escape a string for safe use in Python string literals (with quotes).
-            
+
             Properly escapes quotes, backslashes, and other special characters.
             """
             if value is None:
@@ -81,7 +81,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             # Replace tabs with \t escape sequence
             escaped = escaped.replace("\t", "\\t")
             return escaped
-        
+
         self.env.filters["escape_python_string"] = escape_python_string
         self.env.filters["escape_python_literal"] = escape_python_literal
         # Note: We don't need to store data_model anymore - views are independent
