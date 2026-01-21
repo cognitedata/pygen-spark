@@ -42,6 +42,48 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             trim_blocks=False,
             lstrip_blocks=False,
         )
+
+        # Add custom filter to escape Python strings for use in docstrings and string literals
+        def escape_python_string(value: str | None) -> str:
+            """Escape a string for safe use in Python docstrings.
+
+            Handles quotes, newlines, and other special characters that could break
+            Python string literals. For docstrings (triple-quoted), we replace problematic
+            characters with safe alternatives.
+            """
+            if value is None:
+                return ""
+            # For docstrings (triple-quoted), we need to handle triple quotes specially
+            # Replace triple quotes with escaped version to prevent breaking docstring
+            escaped = value.replace('"""', '\\"\\"\\"')
+            # Also handle single and double quotes that might appear
+            # Replace newlines with spaces (docstrings should be single-line for parameter descriptions)
+            escaped = escaped.replace("\n", " ").replace("\r", " ")
+            # Replace tabs with spaces
+            escaped = escaped.replace("\t", " ")
+            # Collapse multiple spaces
+            while "  " in escaped:
+                escaped = escaped.replace("  ", " ")
+            return escaped.strip()
+
+        # Add filter to escape strings for use in Python string literals (with quotes)
+        def escape_python_literal(value: str | None) -> str:
+            """Escape a string for safe use in Python string literals (with quotes).
+
+            Properly escapes quotes, backslashes, and other special characters.
+            """
+            if value is None:
+                return ""
+            # Escape backslashes first, then quotes
+            escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("'", "\\'")
+            # Replace newlines with \n escape sequence
+            escaped = escaped.replace("\n", "\\n").replace("\r", "\\r")
+            # Replace tabs with \t escape sequence
+            escaped = escaped.replace("\t", "\\t")
+            return escaped
+
+        self.env.filters["escape_python_string"] = escape_python_string
+        self.env.filters["escape_python_literal"] = escape_python_literal
         # Note: We don't need to store data_model anymore - views are independent
         # and we use view.as_id() directly in the template
 

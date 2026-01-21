@@ -54,11 +54,10 @@ class TimeSeriesDatapointsUDTF:
     
     @staticmethod
     def outputSchema() -> StructType:
-        """Return the output schema: (timestamp, value, _error)."""
+        """Return the output schema: (timestamp, value)."""
         fields = [
             StructField("timestamp", TimestampType(), nullable=True),
             StructField("value", DoubleType(), nullable=True),
-            StructField("_error", StringType(), nullable=True),
         ]
         return StructType(fields)
     
@@ -258,9 +257,16 @@ class TimeSeriesDatapointsUDTF:
             
             # Extract scalar values from Python inputs
             # Note: Don't check for None before extraction - SECRET() returns PySpark Column objects, not None
-
-                yield (None, None, "Missing required parameters: client_id, client_secret, tenant_id, cdf_cluster, or project")
-
+            client_id_str = _extract_scalar(client_id)
+            client_secret_str = _extract_scalar(client_secret)
+            tenant_id_str = _extract_scalar(tenant_id)
+            cdf_cluster_str = _extract_scalar(cdf_cluster)
+            project_str = _extract_scalar(project)
+            
+            if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
+                error_msg = "Missing required parameters: client_id, client_secret, tenant_id, cdf_cluster, or project"
+                sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
+                yield (None, None)
                 return
             
             instance_id_str = _extract_scalar(instance_id)
@@ -269,7 +275,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None, f"{error_category}: {error_msg}")
+                yield (None, None)
 
                 return
             
@@ -279,7 +285,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None, f"{error_category}: {error_msg}")
+                yield (None, None)
 
                 return
             
@@ -291,7 +297,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = 'CONFIGURATION'
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None, f"{error_category}: {error_msg}")
+                yield (None, None)
 
                 return
             
@@ -318,7 +324,7 @@ class TimeSeriesDatapointsUDTF:
                     error_category = "CONFIGURATION"
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                    yield (None, None, f"{error_category}: {error_msg}")
+                    yield (None, None)
 
                     return
             
@@ -442,7 +448,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = "CONFIGURATION"
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None, f"{error_category}: {error_msg}")
+                yield (None, None)
 
                 return
             
@@ -465,7 +471,7 @@ class TimeSeriesDatapointsUDTF:
                 error_category = _classify_error(None, token_error)
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                yield (None, None, f"{error_category}: {error_msg}")
+                yield (None, None)
 
                 return
             
@@ -525,19 +531,31 @@ class TimeSeriesDatapointsUDTF:
                     error_category = _classify_error(None, parse_error)
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
 
-                    yield (None, None, f"{error_category}: {error_msg}")
+                    yield (None, None)
 
                     return
 
                 row_count = len(timestamps)
-
-                    yield (timestamp_dt, val, None)
-
+                
+                # Yield datapoints
+                for i, ts_ms in enumerate(timestamps):
+                    timestamp_dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
+                    val = values[i] if i < len(values) else None
+                    yield (timestamp_dt, val)
 
                 # Log success (both stderr and stdout for Serverless SQL visibility)
                 success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
                 sys.stderr.write(f"{success_msg}\n")
                 print(success_msg)  # Also print to stdout for Serverless SQL visibility
+
+            except Exception as e:
+                # Log error for debugging (without traceback to avoid import issues)
+                # Both stderr and stdout for Serverless SQL visibility
+                error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}"
+                sys.stderr.write(error_info)
+                print(error_info)  # Also print to stdout for Serverless SQL visibility
+
+                yield (None, None)
 
                 return
                 
@@ -548,7 +566,7 @@ class TimeSeriesDatapointsUDTF:
             sys.stderr.write(f"{error_info}\n")
             print(error_info)  # Also print to stdout for Serverless SQL visibility
 
-            yield (None, None, error_info)
+            yield (None, None)
 
             return
 
