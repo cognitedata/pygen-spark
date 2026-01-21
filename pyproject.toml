@@ -82,6 +82,8 @@ fixable = ["E","W","F","I","RUF","TID","UP", "B", "FLY", "PTH", "ERA"]
 ignore = [
     # This is causing issues for pydantic which does not support use of X | Y for type annotations before 3.10
     "UP007", # Use X | Y for type annotations
+    # isinstance with tuple syntax is more readable for multiple types
+    "UP038", # Use X | Y in isinstance call instead of (X, Y)
     # Typer do function calls when setting up the CLI.
     "B008", # Do not perform function call {name} in argument defaults
     # This is done when setting the pygen configs, and useful for getting pretty docs.
