@@ -1,48 +1,24 @@
-# Release 0.2.0 - Enhanced Error Handling and Direct REST API Calls
+# Release 0.2.1 - Fix UDTF Template Issues
 
-This release includes significant improvements to error handling, direct REST API integration, and time series UDTF enhancements.
+This release fixes critical issues in UDTF templates that were causing zero-row results and runtime errors.
 
 ## Bump
 
-- [ ] Patch
-- [x] Minor
+- [x] Patch
+- [ ] Minor
 - [ ] Skip
 
 ## Changelog
-### Added
-
-- Added `_error` column to UDTF output schemas for better error visibility in query results
-- Direct REST API calls in generated UDTFs (no Cognite SDK dependency at runtime)
-- Enhanced error messages with error categories (AUTHENTICATION, CONFIGURATION, NETWORK, UNKNOWN)
-- Protobuf parser support for time series datapoints with JSON fallback
-- HTTP client module with OAuth2 token caching and retry logic
-- Support for distributed limit calculation across multiple time series items
-
-### Changed
-
-- UDTFs now use direct REST API calls instead of Cognite SDK at runtime
-- Improved request payload alignment with SDK behavior (ignoreUnknownIds, limit distribution)
-- Updated time series UDTF templates to match SDK's retrieve_arrays behavior
-- Enhanced error handling with structured error messages in output
 
 ### Fixed
 
-- Fixed time series UDTF request payload to match SDK behavior (ignoreUnknownIds: True)
-- Fixed limit distribution across multiple time series items (distributes total limit, not per-item)
-- Fixed CI/CD compatibility issues (ruff UP038, mypy pyspark imports)
-- Fixed dependency resolution for cognite-databricks integration
-- Fixed get_file method to handle _session and _catalog suffixes
+- Fixed missing `json` import in `udtf_function.py.jinja` template that caused `NameError: name 'json' is not defined` when processing data model UDTFs with array or relationship properties
+- Fixed `time_series_datapoints_detailed_udtf` to properly parse protobuf responses instead of attempting to parse JSON, which was causing zero-row results
+- Implemented proper protobuf parsing with JSON fallback for detailed time series UDTF, extracting instanceId, status codes, and symbols from protobuf responses
+- Ensured all helper functions have access to `json` module by adding import at the beginning of `eval()` method
 
 ### Improved
 
-- Removed debug functionality from all UDTF templates for cleaner output
-- Improved exception handling specificity throughout codebase
-- Enhanced code quality (linting, type checking, formatting)
-- Updated documentation to reflect direct REST API approach
-- Improved import organization and code style alignment with pygen-main
-
-### Removed
-
-- Removed time_series_datapoints_long_udtf and time_series_datapoints_multi_udtf templates
-- Removed all debug-related code and columns from UDTF templates
-- Removed Cognite SDK runtime dependency from generated UDTFs
+- Enhanced protobuf parsing logic to extract detailed information (status codes, status symbols, external_id, space) for each datapoint in detailed UDTF
+- Improved error handling with proper fallback to JSON parsing when protobuf is unavailable
+- Better support for all datapoint types (numeric, string, aggregate) in protobuf responses
