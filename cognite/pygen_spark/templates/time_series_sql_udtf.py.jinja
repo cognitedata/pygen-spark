@@ -1,9 +1,8 @@
-"""Auto-generated Time Series Datapoints Detailed UDTF for Cognite Data Fusion.
+"""Auto-generated Time Series SQL UDTF for Cognite Data Fusion.
 
-This UDTF retrieves datapoints from a single Time Series using instance_id.
+This UDTF retrieves aggregated datapoints using SQL-native hints for pushdown.
 Uses protobuf format with scalar UDTF execution for Unity Catalog SQL registration compatibility.
-Returns rows in format: (timestamp, value, status_code, status_symbol, external_id, space)
-Note: All datapoints come from the same time series, so space/external_id not needed per row.
+Returns rows in format: (timestamp, value, external_id, space)
 """
 
 from __future__ import annotations
@@ -19,13 +18,11 @@ if TYPE_CHECKING:
 # This ensures they're available in Unity Catalog's execution context
 
 from pyspark.sql.types import (
-    StructType,
     StructField,
+    StructType,
     TimestampType,
-    StringType,
     DoubleType,
-    IntegerType,
-    LongType,
+    StringType,
 )
 
 {% if use_udtf_decorator %}
@@ -33,18 +30,16 @@ from pyspark.sql.functions import udtf
 
 @udtf
 {% endif %}
-class TimeSeriesDatapointsDetailedUDTF:
-    """UDTF for retrieving datapoints from a single Time Series using instance_id.
-    
+class TimeSeriesSqlUDTF:
+    """UDTF for retrieving aggregated datapoints using SQL-native pushdown hints.
+
     Uses scalar UDTF execution with protobuf for Unity Catalog SQL registration compatibility.
-    Similar to client.time_series.data.retrieve() for a single time series.
-    Returns rows in format: (timestamp, value, status_code, status_symbol, external_id, space)
-    Note: All datapoints come from the same time series, so space/external_id not needed per row.
+    Returns rows in format: (timestamp, value, external_id, space)
     """
-    
+
     def __init__(self) -> None:
         """Initialize UDTF (no parameters allowed when using analyze method).
-        
+
         Token initialization happens in eval() for all registration modes.
         """
         # Initialize instance variables
@@ -52,20 +47,18 @@ class TimeSeriesDatapointsDetailedUDTF:
         self._init_error: str | None = None
         self._init_error_category: str | None = None
         self._init_success = True
-    
+
     @staticmethod
     def outputSchema() -> StructType:
-        """Return the output schema: (timestamp, value, status_code, status_symbol, external_id, space)."""
+        """Return the output schema: (timestamp, value, external_id, space)."""
         fields = [
             StructField("timestamp", TimestampType(), nullable=True),
             StructField("value", DoubleType(), nullable=True),
-            StructField("status_code", IntegerType(), nullable=True),
-            StructField("status_symbol", StringType(), nullable=True),
             StructField("external_id", StringType(), nullable=True),
             StructField("space", StringType(), nullable=True),
         ]
         return StructType(fields)
-    
+
 {% if include_analyze %}
     @staticmethod
     def analyze(
@@ -75,16 +68,16 @@ class TimeSeriesDatapointsDetailedUDTF:
         cdf_cluster,
         project,
         instance_ids,
-        start,
-        end,
-        aggregates,
-        granularity,
+        start_hint,
+        end_hint,
+        aggregate_hint,
+        granularity_hint,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
-        
+
         This method is used by PySpark Connect to validate arguments and determine output schema.
         For Unity Catalog registration, this method is optional but harmless if present.
-        
+
         Args:
             client_id: OAuth2 client ID column (required)
             client_secret: OAuth2 client secret column (required)
@@ -92,39 +85,40 @@ class TimeSeriesDatapointsDetailedUDTF:
             cdf_cluster: CDF cluster URL column (required)
             project: CDF project name column (required)
             instance_ids: Instance IDs column in format "space1:ext_id1,space2:ext_id2" (required)
-            start: Start timestamp column (ISO 8601 or "2w-ago", "1d-ago", etc.)
-            end: End timestamp column (ISO 8601 or "now", "1d-ahead", etc.)
-            aggregates: Optional aggregate type column (e.g., "average", "max", "min", "count")
-            granularity: Optional granularity column for aggregates (e.g., "1h", "1d", "30s")
-        
+            start_hint: Start timestamp column (SQL TIMESTAMP, ISO 8601, or relative time)
+            end_hint: End timestamp column (SQL TIMESTAMP, ISO 8601, or relative time)
+            aggregate_hint: SQL aggregate hint (e.g., "avg", "sum", "min", "max")
+            granularity_hint: SQL group-by granularity hint (e.g., "14d", "1h")
+
         Returns:
             AnalyzeResult containing the output schema
         """
         # Lazy import to avoid circular import during serialization
         # Import from non-Connect module first to avoid circular import in pyspark.sql.connect.udtf
-        schema = TimeSeriesDatapointsDetailedUDTF.outputSchema()
+        schema = TimeSeriesSqlUDTF.outputSchema()
         # Use __import__ with fromlist to avoid triggering circular import
         try:
             # Try non-Connect module first (avoids circular import in connect.udtf)
-            udtf_mod = __import__('pyspark.sql.udtf', fromlist=['AnalyzeResult'], level=0)
-            AnalyzeResult = getattr(udtf_mod, 'AnalyzeResult')
+            udtf_mod = __import__("pyspark.sql.udtf", fromlist=["AnalyzeResult"], level=0)
+            AnalyzeResult = getattr(udtf_mod, "AnalyzeResult")
             return AnalyzeResult(schema)
         except (ImportError, AttributeError):
             # Fallback: try to get from sys.modules if already loaded
             import sys
-            if 'pyspark.sql.udtf' in sys.modules:
-                mod = sys.modules['pyspark.sql.udtf']
-                if hasattr(mod, 'AnalyzeResult'):
+
+            if "pyspark.sql.udtf" in sys.modules:
+                mod = sys.modules["pyspark.sql.udtf"]
+                if hasattr(mod, "AnalyzeResult"):
                     return mod.AnalyzeResult(schema)
             # Last resort: try connect module (may trigger circular import, but only when method is called)
             try:
-                connect_mod = __import__('pyspark.sql.connect.udtf', fromlist=['AnalyzeResult'], level=0)
-                AnalyzeResult = getattr(connect_mod, 'AnalyzeResult')
+                connect_mod = __import__("pyspark.sql.connect.udtf", fromlist=["AnalyzeResult"], level=0)
+                AnalyzeResult = getattr(connect_mod, "AnalyzeResult")
                 return AnalyzeResult(schema)
             except (ImportError, AttributeError):
                 raise ImportError("Could not import AnalyzeResult from pyspark.sql.udtf or pyspark.sql.connect.udtf")
 {% endif %}
-    
+
     def eval(
         self,
         client_id: str | None = None,
@@ -133,15 +127,16 @@ class TimeSeriesDatapointsDetailedUDTF:
         cdf_cluster: str | None = None,
         project: str | None = None,
         instance_ids: str | None = None,  # Format: "space1:ext_id1,space2:ext_id2"
-        start: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
-        end: object | None = None,    # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
-        aggregates: str | None = None,
-        granularity: str | None = None,
+        start_hint: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
+        end_hint: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
+        aggregate_hint: str | None = None,  # SQL aggregate hint (avg/sum/min/max/count)
+        granularity_hint: str | None = None,  # Granularity hint (e.g., "14d", "1h")
     ) -> Iterator[tuple]:
-        """Execute scalar UDTF using instance_ids (comma-separated) for query.
-        
+        """Execute scalar UDTF using pushdown hints for aggregates and granularity.
+
         Uses protobuf format and scalar execution for Unity Catalog SQL registration compatibility.
-        
+        Requires aggregate_hint and granularity_hint to avoid raw datapoint retrieval.
+
         Args:
             client_id: OAuth2 client ID (scalar)
             client_secret: OAuth2 client secret (scalar)
@@ -149,32 +144,32 @@ class TimeSeriesDatapointsDetailedUDTF:
             cdf_cluster: CDF cluster URL (scalar)
             project: CDF project name (scalar)
             instance_ids: Instance IDs in format "space1:ext_id1,space2:ext_id2" (scalar)
-            start: Start timestamp (scalar)
-            end: End timestamp (scalar)
-            aggregates: Optional aggregate type (scalar)
-            granularity: Optional granularity for aggregates (scalar)
-        
+            start_hint: Start timestamp (scalar)
+            end_hint: End timestamp (scalar)
+            aggregate_hint: SQL aggregate hint (scalar)
+            granularity_hint: Granularity hint for aggregates (scalar)
+
         Yields:
-            Tuples with (timestamp, value, status_code, status_symbol, external_id, space) columns
+            Tuples with (timestamp, value, external_id, space) columns
         """
         import sys
-        
+
         # CRITICAL: Define helper functions inside eval() for Unity Catalog compatibility
         # Unity Catalog's execution context may not execute module-level code,
         # so all helper functions must be defined here to ensure they're available
         {% set skip_docstring = True %}
         {% filter indent(8, first=True, blank=True) %}
-        {% include '_http_client.py.jinja' %}
+        {% include "_http_client.py.jinja" %}
         {% endfilter %}
-        
+
         # Initialize protobuf variables before including the parser
         _PROTOBUF_AVAILABLE: bool | None = None
         _PROTOBUF_CLASSES: dict[str, type] | None = None
-        
+
         # Wrap protobuf parser include in try-except to catch initialization failures
         try:
             {% filter indent(12, first=True, blank=True) %}
-            {% include '_protobuf_parser.py.jinja' %}
+            {% include "_protobuf_parser.py.jinja" %}
             {% endfilter %}
         except Exception as protobuf_init_error:
             # If protobuf parser initialization fails, set to unavailable and continue
@@ -187,24 +182,23 @@ class TimeSeriesDatapointsDetailedUDTF:
             def _get_protobuf_classes() -> tuple[bool, dict[str, type]]:
                 """Dummy function when protobuf parser initialization fails."""
                 return False, {}
-            
+
             def _parse_protobuf_to_series(
                 response_content: bytes, aggregates: str | None = None
             ) -> tuple[list[int], list[float | str], str]:
                 """Dummy function when protobuf parser initialization fails."""
                 import json
+
                 raise ImportError("Protobuf parser not available - use JSON fallback")
-        
 
         # Import datetime and timezone for timestamp conversion
         from datetime import datetime, timezone
 
-        
         try:
             # Helper function to extract scalar from Python input
             def _extract_scalar(value: object | None) -> object | None:
                 """Extract scalar value from Python input (scalar mode).
-                
+
                 Handles various types that Unity Catalog SECRET() might return:
                 - PySpark Column objects (has as_py method)
                 - Datetime objects (from SQL TIMESTAMP)
@@ -214,37 +208,37 @@ class TimeSeriesDatapointsDetailedUDTF:
                 """
                 if value is None:
                     return None
-                
+
                 # Handle PySpark Column objects (has as_py method)
                 if hasattr(value, "as_py"):
                     try:
                         result = value.as_py()
                         # SECRET() might return bytes, convert to string
                         if isinstance(result, bytes):
-                            return result.decode('utf-8')
+                            return result.decode("utf-8")
                         return result
                     except Exception as e:
                         # If as_py() fails, try to convert to string
                         sys.stderr.write(f"[UDTF] WARNING: as_py() failed for {type(value).__name__}: {e}\n")
-                
+
                 # Handle datetime objects (from SQL TIMESTAMP) - preserve them!
                 # Check for datetime-like objects before converting to string
-                if hasattr(value, 'timestamp') or hasattr(value, 'isoformat') or hasattr(value, 'year'):
+                if hasattr(value, "timestamp") or hasattr(value, "isoformat") or hasattr(value, "year"):
                     # This is likely a datetime object - preserve it
                     return value
-                
+
                 # Handle string directly
                 if isinstance(value, str):
                     return value
-                
+
                 # Handle bytes (SECRET might return bytes)
                 if isinstance(value, bytes):
                     try:
-                        return value.decode('utf-8')
+                        return value.decode("utf-8")
                     except UnicodeDecodeError:
-                        sys.stderr.write(f"[UDTF] WARNING: Failed to decode bytes value\n")
+                        sys.stderr.write("[UDTF] WARNING: Failed to decode bytes value\n")
                         return None
-                
+
                 # Try to convert to string as fallback
                 try:
                     str_value = str(value)
@@ -254,7 +248,7 @@ class TimeSeriesDatapointsDetailedUDTF:
                     return None
                 except Exception:
                     return None
-            
+
             # Extract scalar values from Python inputs
             # Note: Don't check for None before extraction - SECRET() returns PySpark Column objects, not None
             client_id_str = _extract_scalar(client_id)
@@ -262,21 +256,19 @@ class TimeSeriesDatapointsDetailedUDTF:
             tenant_id_str = _extract_scalar(tenant_id)
             cdf_cluster_str = _extract_scalar(cdf_cluster)
             project_str = _extract_scalar(project)
-            
+
             if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
                 error_msg = "Missing required parameters: client_id, client_secret, tenant_id, cdf_cluster, or project"
                 sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
-                yield (None, None, None, None, None, None)
+                yield (None, None, None, None)
                 return
-            
+
             instance_ids_str = _extract_scalar(instance_ids)
             if not instance_ids_str:
                 error_msg = "instance_ids is required (format: 'space1:ext_id1,space2:ext_id2')"
-                error_category = 'CONFIGURATION'
+                error_category = "CONFIGURATION"
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                yield (None, None, None, None, None, None)
-
+                yield (None, None, None, None)
                 return
 
             # Parse instance_ids
@@ -287,11 +279,9 @@ class TimeSeriesDatapointsDetailedUDTF:
                     continue
                 if ":" not in instance_id_str:
                     error_msg = f"Invalid instance_id format '{instance_id_str}'. Expected format: 'space:external_id'"
-                    error_category = 'CONFIGURATION'
+                    error_category = "CONFIGURATION"
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                    yield (None, None, None, None, None, None)
-
+                    yield (None, None, None, None)
                     return
 
                 space, external_id = instance_id_str.split(":", 1)
@@ -299,55 +289,68 @@ class TimeSeriesDatapointsDetailedUDTF:
                 external_id = external_id.strip()
                 if not space or not external_id:
                     error_msg = f"Invalid instance_id format '{instance_id_str}'. Both space and external_id must be non-empty."
-                    error_category = 'CONFIGURATION'
+                    error_category = "CONFIGURATION"
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                    yield (None, None, None, None, None, None)
-
+                    yield (None, None, None, None)
                     return
 
                 node_ids.append({"space": space, "externalId": external_id})
 
             if not node_ids:
                 error_msg = "At least one valid instance_id is required"
-                error_category = 'CONFIGURATION'
+                error_category = "CONFIGURATION"
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                yield (None, None, None, None, None, None)
-
+                yield (None, None, None, None)
                 return
-            
-            start_str = _extract_scalar(start) or "2w-ago"
-            end_str = _extract_scalar(end) or "now"
-            aggregates_str = _extract_scalar(aggregates)
-            granularity_str = _extract_scalar(granularity)
 
-            if aggregates_str:
-                allowed_aggregates = {
-                    "average",
-                    "max",
-                    "min",
-                    "count",
-                    "sum",
-                    "interpolation",
-                    "stepinterpolation",
-                    "continuousvariance",
-                    "discretevariance",
-                    "totalvariation",
-                }
-                if aggregates_str.lower() not in allowed_aggregates:
-                    error_msg = f"Unknown aggregate '{aggregates_str}'"
-                    error_category = "CONFIGURATION"
-                    sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+            start_hint_str = _extract_scalar(start_hint)
+            end_hint_str = _extract_scalar(end_hint)
+            aggregate_hint_str = _extract_scalar(aggregate_hint)
+            granularity_hint_str = _extract_scalar(granularity_hint)
 
-                    yield (None, None, None, None, None, None)
+            if not start_hint_str or not end_hint_str:
+                error_msg = "start_hint and end_hint are required for pushdown (use SQL WHERE to derive)"
+                error_category = "CONFIGURATION"
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+                yield (None, None, None, None)
+                return
 
-                    return
-            
+            if not aggregate_hint_str or not granularity_hint_str:
+                error_msg = "aggregate_hint and granularity_hint are required to avoid raw datapoints"
+                error_category = "CONFIGURATION"
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+                yield (None, None, None, None)
+                return
+
+            aggregate_map = {
+                "avg": "average",
+                "average": "average",
+                "sum": "sum",
+                "min": "min",
+                "max": "max",
+                "count": "count",
+            }
+            aggregate_normalized = str(aggregate_hint_str).strip().lower()
+            aggregates_str = aggregate_map.get(aggregate_normalized)
+            if not aggregates_str:
+                error_msg = f"Unknown aggregate '{aggregate_hint_str}'"
+                error_category = "CONFIGURATION"
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+                yield (None, None, None, None)
+                return
+
+            granularity_str = str(granularity_hint_str).strip()
+            if not granularity_str:
+                error_msg = "granularity_hint cannot be empty"
+                error_category = "CONFIGURATION"
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
+                yield (None, None, None, None)
+                return
+
             # Convert start/end time to milliseconds (supports SQL TIMESTAMP, relative time, ISO 8601)
             def timestamp_to_ms(timestamp: object) -> int:
                 """Convert timestamp to milliseconds since epoch.
-                
+
                 Supports:
                 - SQL TIMESTAMP types (datetime objects from Unity Catalog)
                 - Relative time strings: "2w-ago", "1d-ago", "now", "3d-ahead"
@@ -358,71 +361,75 @@ class TimeSeriesDatapointsDetailedUDTF:
                 import time
                 import re
                 from datetime import datetime, timezone
-                
+
                 # Handle None
                 if timestamp is None:
                     raise ValueError("Timestamp cannot be None")
-                
+
                 # Handle datetime objects (from SQL TIMESTAMP)
                 # Check for datetime-like objects (has timestamp() method or datetime attributes)
-                if hasattr(timestamp, 'timestamp'):
+                if hasattr(timestamp, "timestamp"):
                     try:
                         # datetime.datetime or similar object
                         # Handle timezone-aware and timezone-naive datetimes
-                        if hasattr(timestamp, 'tzinfo') and timestamp.tzinfo is not None:
+                        if hasattr(timestamp, "tzinfo") and timestamp.tzinfo is not None:
                             # Timezone-aware: use timestamp() directly
                             return int(timestamp.timestamp() * 1000)
                         else:
                             # Timezone-naive: assume UTC
                             return int(timestamp.replace(tzinfo=timezone.utc).timestamp() * 1000)
-                    except (AttributeError, TypeError) as e:
+                    except (AttributeError, TypeError):
                         # If timestamp() fails, try other methods
                         pass
-                
+
                 # Also check for datetime-like objects with year/month/day attributes
-                if hasattr(timestamp, 'year') and hasattr(timestamp, 'month') and hasattr(timestamp, 'day'):
+                if hasattr(timestamp, "year") and hasattr(timestamp, "month") and hasattr(timestamp, "day"):
                     try:
                         # Try to construct a datetime and convert
-                        if hasattr(timestamp, 'hour'):
+                        if hasattr(timestamp, "hour"):
                             dt = datetime(
-                                timestamp.year, timestamp.month, timestamp.day,
-                                timestamp.hour, timestamp.minute, timestamp.second,
-                                getattr(timestamp, 'microsecond', 0)
+                                timestamp.year,
+                                timestamp.month,
+                                timestamp.day,
+                                timestamp.hour,
+                                timestamp.minute,
+                                timestamp.second,
+                                getattr(timestamp, "microsecond", 0),
                             )
                         else:
                             dt = datetime(timestamp.year, timestamp.month, timestamp.day)
                         # Assume UTC if no timezone info
-                        if not hasattr(timestamp, 'tzinfo') or timestamp.tzinfo is None:
+                        if not hasattr(timestamp, "tzinfo") or timestamp.tzinfo is None:
                             dt = dt.replace(tzinfo=timezone.utc)
                         return int(dt.timestamp() * 1000)
                     except Exception:
                         pass
-                
+
                 # Handle int/float (milliseconds)
                 if isinstance(timestamp, (int, float)):
                     return int(timestamp)
-                
+
                 # Handle string types
                 if isinstance(timestamp, str):
                     # Handle "now"
                     if timestamp.lower() == "now":
                         return int(time.time() * 1000)
-                    
+
                     # Handle relative time strings like "2w-ago", "1d-ago", "3d-ahead"
                     # Pattern: (\d+)(s|m|h|d|w)-(ago|ahead)
-                    UNIT_IN_MS = {"s": 1000, "m": 60000, "h": 3600000, "d": 86400000, "w": 604800000}
+                    unit_in_ms = {"s": 1000, "m": 60000, "h": 3600000, "d": 86400000, "w": 604800000}
                     match = re.match(r"(\d+)([smhdw])-(ago|ahead)", timestamp.lower())
                     if match:
                         magnitude = int(match.group(1))
                         unit = match.group(2)
                         direction = match.group(3)
-                        ms_offset = magnitude * UNIT_IN_MS[unit]
+                        ms_offset = magnitude * unit_in_ms[unit]
                         now_ms = int(time.time() * 1000)
                         if direction == "ago":
                             return now_ms - ms_offset
                         else:  # ahead
                             return now_ms + ms_offset
-                    
+
                     # Try parsing as ISO 8601 datetime
                     try:
                         # Try various ISO 8601 and SQL timestamp formats
@@ -431,7 +438,7 @@ class TimeSeriesDatapointsDetailedUDTF:
                             "%Y-%m-%dT%H:%M:%SZ",
                             "%Y-%m-%dT%H:%M:%S",
                             "%Y-%m-%d %H:%M:%S.%f",  # SQL timestamp with microseconds
-                            "%Y-%m-%d %H:%M:%S",     # SQL timestamp format
+                            "%Y-%m-%d %H:%M:%S",  # SQL timestamp format
                         ]:
                             try:
                                 dt = datetime.strptime(timestamp, fmt)
@@ -444,7 +451,7 @@ class TimeSeriesDatapointsDetailedUDTF:
                                 continue
                     except Exception:
                         pass
-                    
+
                     # If we can't parse it, raise an error
                     raise ValueError(
                         f"Invalid timestamp format: '{timestamp}'. "
@@ -452,22 +459,20 @@ class TimeSeriesDatapointsDetailedUDTF:
                         "ISO 8601 (e.g., '2024-01-01T00:00:00Z'), SQL timestamp (e.g., '2024-01-01 00:00:00'), "
                         "or milliseconds (int)"
                     )
-                
+
                 raise TypeError(f"Timestamp must be datetime, str, int, or float, got {type(timestamp)}")
-            
+
             # Convert start/end to milliseconds
             try:
-                start_ms = timestamp_to_ms(start_str)
-                end_ms = timestamp_to_ms(end_str)
+                start_ms = timestamp_to_ms(start_hint_str)
+                end_ms = timestamp_to_ms(end_hint_str)
             except (ValueError, TypeError) as e:
                 error_msg = f"Invalid time format: {str(e)}"
                 error_category = "CONFIGURATION"
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                yield (None, None, None, None, None, None)
-
+                yield (None, None, None, None)
                 return
-            
+
             # Get OAuth token (with caching)
             try:
                 token, expires_at = _get_oauth_token(
@@ -486,37 +491,29 @@ class TimeSeriesDatapointsDetailedUDTF:
                 error_msg = f"Failed to acquire OAuth token: {str(token_error)}"
                 error_category = _classify_error(None, token_error)
                 sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                yield (None, None, None, None, None, None)
-
+                yield (None, None, None, None)
                 return
-            
+
             try:
                 # Log query start (both stderr and stdout for Serverless SQL visibility)
-                query_start = f"[UDTF] Querying {len(node_ids)} time series (detailed)"
+                query_start = f"[UDTF] Querying {len(node_ids)} time series (aggregated)"
                 sys.stderr.write(f"{query_start}\n")
                 print(query_start)  # Also print to stdout for Serverless SQL visibility
-                
+
                 # Make direct REST call to CDF API with protobuf
                 base_url = f"https://{cdf_cluster_str}.cognitedata.com"
                 api_path = f"/api/v1/projects/{project_str}/timeseries/data/list"
                 full_url = f"{base_url}{api_path}"
-                
+
                 # Build request payload aligned with SDK (per-item aggregates/granularity, no cursor)
                 # start and end must be inside each item as milliseconds, not at top level
                 items_payload = []
                 num_items = len(node_ids)
-                
+
                 # SDK distributes max limit across all items
-                # For aggregates: 10,000 total limit distributed across items
-                # For raw: 100,000 total limit distributed across items
-                if aggregates_str and granularity_str:
-                    max_limit = 10000  # SDK aggregate limit
-                    limit_per_item = max_limit // num_items
-                else:
-                    max_limit = 100000  # SDK raw limit
-                    limit_per_item = max_limit // num_items
-                
+                max_limit = 10000  # SDK aggregate limit
+                limit_per_item = max_limit // num_items
+
                 for node_id in node_ids:
                     item_payload = {
                         "instanceId": {
@@ -524,30 +521,18 @@ class TimeSeriesDatapointsDetailedUDTF:
                             "externalId": node_id["externalId"],
                         },
                         "start": start_ms,  # Milliseconds, inside item
-                        "end": end_ms,     # Milliseconds, inside item
+                        "end": end_ms,  # Milliseconds, inside item
                         "limit": limit_per_item,  # Distributed limit per item
+                        "aggregates": [aggregates_str],
+                        "granularity": granularity_str,
                     }
-                    # SDK: aggregates/granularity are per-item; includeStatus only for raw queries
-                    if aggregates_str and granularity_str:
-                        item_payload["aggregates"] = [aggregates_str]
-                        item_payload["granularity"] = granularity_str
-                    else:
-                        item_payload["includeStatus"] = True
                     items_payload.append(item_payload)
-                
+
                 payload = {
                     "items": items_payload,
                     "ignoreUnknownIds": True,  # SDK uses True for retrieve_arrays (ChunkingDpsFetcher)
                 }
-                
-                # Try protobuf first, fallback to JSON if protobuf fails
-                timestamps: list[int] = []
-                values: list[float | str] = []
-                status_codes: list[int] = []
-                status_symbols: list[str] = []
-                external_ids: list[str] = []
-                spaces: list[str] = []
-                
+
                 try:
                     # Make request with protobuf Accept header
                     response = _make_request(
@@ -558,7 +543,7 @@ class TimeSeriesDatapointsDetailedUDTF:
                         timeout=30,
                         accept_protobuf=True,  # Request protobuf response!
                     )
-                    
+
                     # Try protobuf parsing first, fallback to JSON
                     row_count = 0
                     try:
@@ -568,128 +553,80 @@ class TimeSeriesDatapointsDetailedUDTF:
                             DataPointListResponse = protobuf_classes["DataPointListResponse"]
                             proto_response = DataPointListResponse()
                             proto_response.MergeFromString(response.content)
-                            
+
                             # Process each item in the protobuf response
                             for item in proto_response.items:
                                 # Extract instanceId (space, externalId)
-                                if item.HasField('instanceId'):
+                                if item.HasField("instanceId"):
                                     space_val = item.instanceId.space
                                     external_id_val = item.instanceId.externalId
                                 else:
                                     space_val = ""
                                     external_id_val = ""
-                                
-                                # Process numeric datapoints
-                                if item.HasField('numericDatapoints'):
-                                    for dp in item.numericDatapoints.datapoints:
-                                        ts_ms = dp.timestamp
-                                        timestamp_dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
-                                        val = dp.value
-                                        status_code = dp.status.code if dp.HasField('status') else None
-                                        status_symbol = dp.status.symbol if dp.HasField('status') else None
-                                        yield (timestamp_dt, val, status_code, status_symbol, external_id_val, space_val)
-                                        row_count += 1
-                                
-                                # Process string datapoints
-                                elif item.HasField('stringDatapoints'):
-                                    for dp in item.stringDatapoints.datapoints:
-                                        ts_ms = dp.timestamp
-                                        timestamp_dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
-                                        val = dp.value
-                                        status_code = dp.status.code if dp.HasField('status') else None
-                                        status_symbol = dp.status.symbol if dp.HasField('status') else None
-                                        yield (timestamp_dt, val, status_code, status_symbol, external_id_val, space_val)
-                                        row_count += 1
-                                
+
                                 # Process aggregate datapoints
-                                elif item.HasField('aggregateDatapoints'):
+                                if item.HasField("aggregateDatapoints"):
                                     for dp in item.aggregateDatapoints.datapoints:
                                         ts_ms = dp.timestamp
-                                        timestamp_dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
-                                        
+                                        timestamp_dt = (
+                                            datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
+                                        )
+
                                         # Get value based on aggregate type
-                                        if aggregates_str:
-                                            agg_name = aggregates_str.lower()
-                                            if agg_name == 'average':
-                                                val = dp.average
-                                            elif agg_name == 'max':
-                                                val = dp.max
-                                            elif agg_name == 'min':
-                                                val = dp.min
-                                            elif agg_name == 'count':
-                                                val = float(dp.count)
-                                            elif agg_name == 'sum':
-                                                val = dp.sum
-                                            elif agg_name == 'interpolation':
-                                                val = dp.interpolation
-                                            elif agg_name == 'stepinterpolation':
-                                                val = dp.stepInterpolation
-                                            elif agg_name == 'continuousvariance':
-                                                val = dp.continuousVariance
-                                            elif agg_name == 'discretevariance':
-                                                val = dp.discreteVariance
-                                            elif agg_name == 'totalvariation':
-                                                val = dp.totalVariation
-                                            else:
-                                                val = dp.average
+                                        agg_name = aggregates_str.lower()
+                                        if agg_name == "average":
+                                            val = dp.average
+                                        elif agg_name == "max":
+                                            val = dp.max
+                                        elif agg_name == "min":
+                                            val = dp.min
+                                        elif agg_name == "count":
+                                            val = float(dp.count)
+                                        elif agg_name == "sum":
+                                            val = dp.sum
+                                        elif agg_name == "interpolation":
+                                            val = dp.interpolation
+                                        elif agg_name == "stepinterpolation":
+                                            val = dp.stepInterpolation
+                                        elif agg_name == "continuousvariance":
+                                            val = dp.continuousVariance
+                                        elif agg_name == "discretevariance":
+                                            val = dp.discreteVariance
+                                        elif agg_name == "totalvariation":
+                                            val = dp.totalVariation
                                         else:
                                             val = dp.average
-                                        
-                                        # Aggregate datapoints don't have status
-                                        status_code = None
-                                        status_symbol = None
-                                        yield (timestamp_dt, val, status_code, status_symbol, external_id_val, space_val)
+
+                                        yield (timestamp_dt, val, external_id_val, space_val)
                                         row_count += 1
                         else:
                             raise ImportError("Protobuf not available")
-                    except Exception as protobuf_error:
+                    except Exception:
                         # Fallback to JSON parsing
-                        import json
                         response_data = response.json()
                         items = response_data.get("items", [])
-                        
+
                         for item in items:
                             instance_id = item.get("instanceId", {})
                             space_val = instance_id.get("space", "")
                             external_id_val = instance_id.get("externalId", "")
-                            
-                            # Extract datapoints from item
-                            numeric_dps = item.get("numericDatapoints", {}).get("datapoints", [])
-                            string_dps = item.get("stringDatapoints", {}).get("datapoints", [])
+
                             aggregate_dps = item.get("aggregateDatapoints", {}).get("datapoints", [])
-                            
-                            datapoints = numeric_dps or string_dps or aggregate_dps
-                            
-                            for dp in datapoints:
+
+                            for dp in aggregate_dps:
                                 ts_ms = dp.get("timestamp", 0)
                                 timestamp_dt = datetime.fromtimestamp(ts_ms / 1000, tz=timezone.utc) if ts_ms else None
-                                
-                                # Get value based on type
-                                if numeric_dps:
-                                    val = dp.get("value")
-                                elif string_dps:
-                                    val = dp.get("value")
-                                elif aggregate_dps and aggregates_str:
-                                    val = dp.get(aggregates_str.lower())
-                                else:
-                                    val = None
-                                
-                                # Get status
-                                status = dp.get("status", {})
-                                status_code = status.get("code")
-                                status_symbol = status.get("symbol")
-                                
-                                yield (timestamp_dt, val, status_code, status_symbol, external_id_val, space_val)
+                                val = dp.get(aggregates_str.lower())
+                                yield (timestamp_dt, val, external_id_val, space_val)
                                 row_count += 1
+
                 except Exception as parse_error:
                     error_msg = f"Failed to parse response: {str(parse_error)}"
                     error_category = _classify_error(None, parse_error)
                     sys.stderr.write(f"[UDTF] ✗ {error_category}: {error_msg}\n")
-
-                    yield (None, None, None, None, None, None)
-
+                    yield (None, None, None, None)
                     return
-                
+
                 # Log success (both stderr and stdout for Serverless SQL visibility)
                 success_msg = f"[UDTF] SUCCESS: yielded {row_count} rows (scalar mode)"
                 sys.stderr.write(f"{success_msg}\n")
@@ -701,19 +638,14 @@ class TimeSeriesDatapointsDetailedUDTF:
                 error_info = f"[UDTF] ✗ Error during query: {type(e).__name__}: {str(e)}"
                 sys.stderr.write(error_info)
                 print(error_info)  # Also print to stdout for Serverless SQL visibility
-
-                yield (None, None, None, None, None, None)
-
+                yield (None, None, None, None)
                 return
-                
+
         except Exception as outer_error:
             # Last resort: if anything goes wrong, yield error row
             # Both stderr and stdout for Serverless SQL visibility
             error_info = f"ERROR: Unexpected error in eval(): {type(outer_error).__name__}: {str(outer_error)}"
             sys.stderr.write(f"{error_info}\n")
             print(error_info)  # Also print to stdout for Serverless SQL visibility
-
-            yield (None, None, None, None, None, None)
-
+            yield (None, None, None, None)
             return
-

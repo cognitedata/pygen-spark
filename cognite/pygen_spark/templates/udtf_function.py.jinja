@@ -76,7 +76,7 @@ class {{ view.external_id }}UDTF:
             cdf_cluster: CDF cluster URL column (required)
             project: CDF project name column (required)
 {% for prop in properties %}
-            {{ prop.name }}: {{ prop.description or prop.name }} column (optional, defaults to None)
+            {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} column (optional, defaults to None)
 {% endfor %}
         
         Returns:
@@ -135,7 +135,7 @@ class {{ view.external_id }}UDTF:
             cdf_cluster: CDF cluster URL (scalar string)
             project: CDF project name (scalar string)
 {% for prop in properties %}
-            {{ prop.name }}: {{ prop.description or prop.name }} (scalar value)
+            {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} (scalar value)
 {% endfor %}
         
         Yields:
@@ -152,7 +152,287 @@ class {{ view.external_id }}UDTF:
         {% endfilter %}
         # Arrow conversion helpers removed for scalar-only execution.
         
-node",
+        try:
+            import json
+            
+            # Helper function to extract scalar from Python input
+            def _extract_scalar(value: object | None) -> object | None:
+                """Extract scalar value from Python input (scalar mode).
+                
+                Handles various types that Unity Catalog SECRET() might return:
+                - PySpark Column objects (has as_py method)
+                - Datetime objects (from SQL TIMESTAMP)
+                - String values directly
+                - Bytes (SECRET might return bytes)
+                - Other types (converted to string)
+                """
+                if value is None:
+                    return None
+                
+                # Handle PySpark Column objects (has as_py method)
+                if hasattr(value, "as_py"):
+                    try:
+                        result = value.as_py()
+                        # SECRET() might return bytes, convert to string
+                        if isinstance(result, bytes):
+                            return result.decode('utf-8')
+                        return result
+                    except Exception as e:
+                        # If as_py() fails, try to convert to string
+                        sys.stderr.write(f"[UDTF] WARNING: as_py() failed for {type(value).__name__}: {e}\n")
+                
+                # Handle datetime objects (from SQL TIMESTAMP) - preserve them!
+                # Check for datetime-like objects before converting to string
+                if hasattr(value, "timestamp") or hasattr(value, "isoformat") or hasattr(value, "year"):
+                    # This is likely a datetime object - preserve it
+                    return value
+                
+                # Handle string directly
+                if isinstance(value, str):
+                    return value
+                
+                # Handle bytes (SECRET might return bytes)
+                if isinstance(value, bytes):
+                    try:
+                        return value.decode('utf-8')
+                    except UnicodeDecodeError:
+                        sys.stderr.write(f"[UDTF] WARNING: Failed to decode bytes value\n")
+                        return None
+                
+                # Try to convert to string as fallback
+                try:
+                    str_value = str(value)
+                    # Don't return empty strings or "None" string
+                    if str_value and str_value.lower() != "none":
+                        return str_value
+                    return None
+                except Exception:
+                    return None
+            
+            def _extract_property_value_from_dict(value: object) -> object:
+                """Extract property value from raw dict (no SDK objects)."""
+                import re
+                
+                if value is None:
+                    return None
+                
+                def extract_external_id(val: object) -> str | None:
+                    if isinstance(val, dict) and "externalId" in val:
+                        return str(val["externalId"])
+                    if isinstance(val, dict) and "external_id" in val:
+                        return str(val["external_id"])
+                    if isinstance(val, str) and val.startswith("{") and "externalId=" in val:
+                        match = re.search(r"externalId=([^,}]+)", val)
+                        if match:
+                            return match.group(1).strip()
+                    return None
+                
+                # Handle lists/tuples directly from API
+                if isinstance(value, (list, tuple)):
+                    extracted = []
+                    for item in value:
+                        item_external_id = extract_external_id(item)
+                        if item_external_id is not None:
+                            extracted.append(item_external_id)
+                        elif isinstance(item, dict):
+                            extracted.append(_extract_property_value_from_dict(item))
+                        else:
+                            extracted.append(item)
+                    return extracted
+                
+                # Handle strings - check if it's a JSON array string first
+                # This prevents double encoding when API returns arrays as JSON strings
+                if isinstance(value, str):
+                    import json
+                    
+                    stripped = value.strip()
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        try:
+                            parsed = json.loads(value)
+                            if isinstance(parsed, list):
+                                # Recursively process the parsed list to extract external_ids if needed
+                                return _extract_property_value_from_dict(parsed)
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                    # Check for external_id in string format
+                    external_id = extract_external_id(value)
+                    if external_id is not None:
+                        return external_id
+                    # Return string as-is - let _normalize_value decide if it needs parsing
+                    return value
+                
+                # Handle dicts
+                external_id = extract_external_id(value)
+                if external_id is not None:
+                    return external_id
+                return value
+            
+            def _normalize_value(value: object, spark_type: str) -> object:
+                """Normalize values to match expected Spark types."""
+                if value is None:
+                    return None
+                
+                # CRITICAL: For arrays, handle lists directly FIRST (before any extraction)
+                # For ArrayType, PySpark expects a Python list, NOT a JSON string
+                if "Array" in spark_type:
+                    if isinstance(value, list):
+                        # Already a list from API - return as-is (PySpark expects list for ArrayType)
+                        return value
+                    
+                    # If it's a JSON string, parse it to a list
+                    if isinstance(value, str):
+                        stripped = value.strip()
+                        if stripped.startswith("[") and stripped.endswith("]"):
+                            try:
+                                parsed = json.loads(value)
+                                if isinstance(parsed, list):
+                                    # Check for double-encoding (first element is a JSON string)
+                                    if parsed and isinstance(parsed[0], str):
+                                        inner_stripped = parsed[0].strip()
+                                        if inner_stripped.startswith("[") and inner_stripped.endswith("]"):
+                                            # Double-encoded! Parse the inner JSON string
+                                            try:
+                                                inner_parsed = json.loads(parsed[0])
+                                                if isinstance(inner_parsed, list):
+                                                    return inner_parsed
+                                            except (json.JSONDecodeError, ValueError):
+                                                pass
+                                    # Valid JSON array - return as list (PySpark expects list)
+                                    return parsed
+                            except (json.JSONDecodeError, ValueError):
+                                # Not valid JSON, continue with normal extraction
+                                pass
+                
+                # For non-arrays or arrays that need extraction (e.g., DirectRelation lists)
+                extracted = _extract_property_value_from_dict(value)
+                if extracted is None:
+                    return None
+                
+                # If extraction returned a list (for arrays), return it directly (PySpark expects list)
+                if "Array" in spark_type and isinstance(extracted, list):
+                    return extracted
+                
+                # If extraction returned a string that looks like JSON array, parse it to a list
+                if "Array" in spark_type and isinstance(extracted, str):
+                    stripped = extracted.strip()
+                    if stripped.startswith("[") and stripped.endswith("]"):
+                        try:
+                            parsed = json.loads(extracted)
+                            if isinstance(parsed, list):
+                                # Check for double-encoding
+                                if parsed and isinstance(parsed[0], str):
+                                    inner_stripped = parsed[0].strip()
+                                    if inner_stripped.startswith("[") and inner_stripped.endswith("]"):
+                                        # Double-encoded! Parse the inner JSON string
+                                        try:
+                                            inner_parsed = json.loads(parsed[0])
+                                            if isinstance(inner_parsed, list):
+                                                return inner_parsed
+                                        except (json.JSONDecodeError, ValueError):
+                                            pass
+                                return parsed
+                        except (json.JSONDecodeError, ValueError):
+                            pass
+                
+                # CRITICAL FIX: Handle relationship properties stored as StringType but can be lists
+                # DirectRelation properties (like files, activities, timeSeries) are stored as StringType
+                # but can contain lists/dicts that need JSON encoding
+                if "StringType" in spark_type and isinstance(extracted, (list, dict)):
+                    # Relationship properties that are lists/dicts must be JSON-encoded
+                    return json.dumps(extracted, ensure_ascii=False)
+                
+                if "Long" in spark_type or "Integer" in spark_type:
+                    try:
+                        return int(extracted)
+                    except (TypeError, ValueError):
+                        return None
+                if "Double" in spark_type or "Float" in spark_type:
+                    try:
+                        return float(extracted)
+                    except (TypeError, ValueError):
+                        return None
+                if "Boolean" in spark_type:
+                    if isinstance(extracted, bool):
+                        return extracted
+                    if isinstance(extracted, str):
+                        return extracted.strip().lower() in {"true", "1", "yes"}
+                    return bool(extracted)
+                return extracted
+            
+            # Extract scalar values from Python inputs
+            client_id_str = _extract_scalar(client_id)
+            client_secret_str = _extract_scalar(client_secret)
+            tenant_id_str = _extract_scalar(tenant_id)
+            cdf_cluster_str = _extract_scalar(cdf_cluster)
+            project_str = _extract_scalar(project)
+            
+            # Validate required parameters
+            if not all([client_id_str, client_secret_str, tenant_id_str, cdf_cluster_str, project_str]):
+                error_msg = "Missing required credentials or configuration"
+                sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
+                return
+            
+            # Build filter params from scalar inputs
+            # Extract properties to handle PySpark Column objects and preserve datetime objects
+            filter_params: dict[str, object] = {}
+{% for prop in properties %}
+            if {{ prop.name }} is not None:
+                # Extract scalar value (handles PySpark Column objects, preserves datetime objects)
+                extracted_prop = _extract_scalar({{ prop.name }})
+                if extracted_prop is not None:
+                    filter_params["{{ prop.name }}"] = extracted_prop
+{% endfor %}
+            filter_json = self._build_filter_json(filter_params)
+            
+            # Get OAuth token (with caching)
+            try:
+                token, expires_at = _get_oauth_token(
+                    str(client_id_str),
+                    str(client_secret_str),
+                    str(tenant_id_str),
+                    str(cdf_cluster_str),
+                    self._token_cache,
+                )
+                # Cache token for next call
+                self._token_cache = {
+                    "access_token": token,
+                    "expires_at": expires_at,
+                }
+            except Exception as token_error:
+                error_category = _classify_error(None, token_error)
+                sys.stderr.write(f"[UDTF] ✗ {error_category}: Failed to acquire OAuth token: {token_error}\n")
+                raise
+            
+            # Build API URL
+            base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+            api_path = f"/api/v1/projects/{project_str}/models/instances/list"
+            full_url = f"{base_url}{api_path}"
+            
+            # Define properties list and view metadata (used in pagination loop)
+            properties_list = [
+{% for prop in properties %}
+                {"name": "{{ prop.name }}", "spark_type": "{{ prop.spark_type }}"},
+{% endfor %}
+            ]
+            view_key = "{{ view.external_id }}/{{ view.version }}"
+            space_name = "{{ view.space }}"
+            
+            # Pagination: iterate through all pages using nextCursor
+            next_cursor: str | None = None
+            while True:
+                # Build request payload
+                payload = {
+                    "sources": [
+                        {
+                            "source": {
+                                "type": "view",
+                                "space": "{{ view.space | escape_python_literal }}",
+                                "externalId": "{{ view.external_id | escape_python_literal }}",
+                                "version": "{{ view.version | escape_python_literal }}",
+                            }
+                        }
+                    ],
+                    "instanceType": "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
                     "limit": 1000,
                     "includeTyping": False,
                 }
@@ -174,9 +454,73 @@ node",
                 # Process items from this page
                 for item in items:
                     row_values: list[object] = []
-
+                    
+                    for prop in properties_list:
+                        prop_name = prop["name"]
+                        prop_value = None
+                        sources = item.get("sources", {})
+                        if isinstance(sources, dict) and view_key in sources:
+                            view_data = sources[view_key]
+                            if isinstance(view_data, dict):
+                                prop_value = view_data.get(prop_name)
+                        if prop_value is None:
+                            properties_dict = item.get("properties", {})
+                            if isinstance(properties_dict, dict):
+                                if space_name in properties_dict:
+                                    space_data = properties_dict[space_name]
+                                    if isinstance(space_data, dict) and view_key in space_data:
+                                        view_data = space_data[view_key]
+                                        if isinstance(view_data, dict):
+                                            prop_value = view_data.get(prop_name)
+                                if prop_value is None:
+                                    for space_key in properties_dict:
+                                        space_data = properties_dict[space_key]
+                                        if isinstance(space_data, dict) and view_key in space_data:
+                                            view_data = space_data[view_key]
+                                            if isinstance(view_data, dict):
+                                                prop_value = view_data.get(prop_name)
+                                                if prop_value is not None:
+                                                    break
+                        # Fallback: check top-level of item for properties that might be there
+                        # (some API responses may have properties at top level, like tags, aliases)
+                        # This is critical for instance-level metadata like tags, aliases, etc.
+                        if prop_value is None and prop_name in item:
+                            prop_value = item.get(prop_name)
+                        
+                        # Normalize the value (handles arrays correctly)
+                        normalized_value = _normalize_value(prop_value, prop["spark_type"])
+                        
+                        row_values.append(normalized_value)
+                    
+                    row_values.append(item.get("space", None))
+                    row_values.append(item.get("externalId") or item.get("external_id", None))
+                    
+                    # Extract and convert timestamp fields (milliseconds to datetime)
+                    from datetime import datetime, timezone
+                    
+                    def ms_to_datetime(ms: int | None) -> datetime | None:
+                        """Convert milliseconds timestamp to datetime."""
+                        if ms is None:
+                            return None
+                        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+                    
+                    row_values.append(ms_to_datetime(item.get("createdTime")))
+                    row_values.append(ms_to_datetime(item.get("lastUpdatedTime")))
+                    row_values.append(ms_to_datetime(item.get("deletedTime")))
+                    
+                    yield tuple(row_values)
+                
+                # Check for next page
+                next_cursor = response_data.get("nextCursor")
+                if next_cursor is None:
+                    break
+            
+        except Exception as e:
+            error_info = f"[UDTF] x Error during scalar execution: {type(e).__name__}: {str(e)}"
+            sys.stderr.write(f"{error_info}\n")
+            
             raise
-
+        
         return
     def _build_filter_json(self, filters: dict[str, object]) -> dict | None:
         """Build CDF API filter JSON from input parameters.
@@ -191,6 +535,14 @@ node",
         """
         import json
         from datetime import datetime, timezone
+
+        # Create lookup dictionary for property types (array vs scalar)
+        # This allows us to check if a property is an array type in the View definition
+        property_is_array: dict[str, bool] = {
+{% for prop in properties %}
+            "{{ prop.name }}": {{ prop.is_array }},
+{% endfor %}
+        }
 
         def _coerce_filter_value(value: object) -> object:
             """Normalize filter values to SDK-like shapes (supports JSON list strings and datetime objects)."""
@@ -256,28 +608,53 @@ node",
             # Create property reference as list (matches SDK format)
             # Format: ["space", "view_external_id/view_version", "property_name"]
             property_ref = [
-                "{{ view.space }}",
-                "{{ view.external_id }}/{{ view.version }}",
+                "{{ view.space | escape_python_literal }}",
+                "{{ (view.external_id + '/' + view.version) | escape_python_literal }}",
                 prop_name,
             ]
             
-            # Handle different value types
-            if isinstance(prop_value, list):
-                # List values use In filter
-                filter_conditions.append({
-                    "in": {
-                        "property": property_ref,
-                        "values": prop_value,
-                    }
-                })
+            # Check if this property is an array type in the View definition
+            is_array_property = property_is_array.get(prop_name, False)
+            
+            # Determine filter type based on property type and input value type
+            if is_array_property:
+                # For array properties, use containsAny filter
+                # CDF API: containsAny checks if the array property contains any of the provided values
+                if isinstance(prop_value, list):
+                    # Multiple values: check if array contains any of these values
+                    filter_conditions.append({
+                        "containsAny": {
+                            "property": property_ref,
+                            "values": prop_value,
+                        }
+                    })
+                else:
+                    # Single value: wrap in list and use containsAny
+                    # This is correct for array properties - we're checking if the array contains this value
+                    filter_conditions.append({
+                        "containsAny": {
+                            "property": property_ref,
+                            "values": [prop_value],
+                        }
+                    })
             else:
-                # Single values use Equals filter
-                filter_conditions.append({
-                    "equals": {
-                        "property": property_ref,
-                        "value": prop_value,
-                    }
-                })
+                # For scalar properties, use equals or in filter
+                if isinstance(prop_value, list):
+                    # List values use In filter (matches any value in the list)
+                    filter_conditions.append({
+                        "in": {
+                            "property": property_ref,
+                            "values": prop_value,
+                        }
+                    })
+                else:
+                    # Single values use Equals filter
+                    filter_conditions.append({
+                        "equals": {
+                            "property": property_ref,
+                            "value": prop_value,
+                        }
+                    })
         
         # Combine multiple filters with And
         if len(filter_conditions) == 1:

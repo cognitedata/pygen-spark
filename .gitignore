@@ -37,6 +37,9 @@ ENV/
 .coverage
 htmlcov/
 
+# MyPy daemon cache
+.dmypy.json
+
 # Generated files
 generated_udtfs/
 *.pyc
