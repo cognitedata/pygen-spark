@@ -4,7 +4,11 @@ from cognite.pygen_spark.config import CDFConnectionConfig
 
 try:
     from cognite.pygen_spark.fields import UDTFField
-except (ImportError, ModuleNotFoundError, AttributeError):  # pragma: no cover - fallback for environments without PySpark
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
     UDTFField = None  # type: ignore[assignment,misc]
 from cognite.pygen_spark.generator import SparkUDTFGenerator
 from cognite.pygen_spark.models import (
@@ -17,12 +21,20 @@ try:
         TimeSeriesDatapointsUDTF,
         TimeSeriesLatestDatapointsUDTF,
     )
-except (ImportError, ModuleNotFoundError, AttributeError):  # pragma: no cover - fallback for environments without PySpark
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
     TimeSeriesDatapointsUDTF = None  # type: ignore[assignment,misc]
     TimeSeriesLatestDatapointsUDTF = None  # type: ignore[assignment,misc]
 try:
     from cognite.pygen_spark.type_converter import TypeConverter
-except (ImportError, ModuleNotFoundError, AttributeError):  # pragma: no cover - fallback for environments without PySpark
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
     TypeConverter = None  # type: ignore[assignment,misc]
 from cognite.pygen_spark.utils import (
     InstanceId,
