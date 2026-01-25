@@ -536,6 +536,14 @@ class {{ view.external_id }}UDTF:
         import json
         from datetime import datetime, timezone
 
+        # Create lookup dictionary for property types (array vs scalar)
+        # This allows us to check if a property is an array type in the View definition
+        property_is_array: dict[str, bool] = {
+{% for prop in properties %}
+            "{{ prop.name }}": {{ prop.is_array }},
+{% endfor %}
+        }
+
         def _coerce_filter_value(value: object) -> object:
             """Normalize filter values to SDK-like shapes (supports JSON list strings and datetime objects)."""
             # Handle datetime objects (from SQL TIMESTAMP) - convert to ISO 8601
@@ -605,23 +613,38 @@ class {{ view.external_id }}UDTF:
                 prop_name,
             ]
             
-            # Handle different value types
-            if isinstance(prop_value, list):
-                # List values use In filter
+            # Check if this property is an array type in the View definition
+            is_array_property = property_is_array.get(prop_name, False)
+            
+            # Determine filter type based on property type and input value type
+            if is_array_property:
+                # For array properties, use containsAny filter
+                # CDF API: containsAny checks if the array property contains any of the provided values
+                values = prop_value if isinstance(prop_value, list) else [prop_value]
                 filter_conditions.append({
-                    "in": {
+                    "containsAny": {
                         "property": property_ref,
-                        "values": prop_value,
+                        "values": values,
                     }
                 })
             else:
-                # Single values use Equals filter
-                filter_conditions.append({
-                    "equals": {
-                        "property": property_ref,
-                        "value": prop_value,
-                    }
-                })
+                # For scalar properties, use equals or in filter
+                if isinstance(prop_value, list):
+                    # List values use In filter (matches any value in the list)
+                    filter_conditions.append({
+                        "in": {
+                            "property": property_ref,
+                            "values": prop_value,
+                        }
+                    })
+                else:
+                    # Single values use Equals filter
+                    filter_conditions.append({
+                        "equals": {
+                            "property": property_ref,
+                            "value": prop_value,
+                        }
+                    })
         
         # Combine multiple filters with And
         if len(filter_conditions) == 1:

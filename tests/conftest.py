@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Iterable
 from pathlib import Path
 
@@ -9,6 +10,23 @@ import pytest
 from cognite.client import CogniteClient
 from cognite.client import data_modeling as dm
 from cognite.client.testing import monkeypatch_cognite_client
+
+
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool:
+    """Skip tests on Windows to avoid PySpark Unix-only imports."""
+    if os.name == "nt":
+        windows_skip = {
+            "test_fields.py",
+            "test_generator.py",
+            "test_templates.py",
+            "test_type_converter.py",
+            "test_udtf_generation.py",
+        }
+        if collection_path.name in windows_skip:
+            return True
+        if "test_integration" in str(collection_path):
+            return True
+    return False
 
 
 @pytest.fixture()

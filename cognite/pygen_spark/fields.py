@@ -16,8 +16,8 @@ from cognite.client.data_classes.data_modeling.views import (
 
 try:
     from pyspark.sql.types import DataType
-except ImportError:
-    # PySpark may not be available in all environments
+except (ImportError, ModuleNotFoundError, AttributeError):
+    # PySpark may not be available or may fail on some platforms
     DataType = object  # type: ignore[assignment, misc]
 
 
@@ -34,6 +34,7 @@ class UDTFField:
         python_type: Python type annotation (e.g., "str", "int", "list[str]")
         nullable: Whether the field is nullable
         description: Optional description of the field
+        is_array: Whether the property is an array type in the View definition
     """
 
     name: str
@@ -42,6 +43,7 @@ class UDTFField:
     python_type: str
     nullable: bool
     description: str | None = None
+    is_array: bool = False
 
     @classmethod
     def from_property(
@@ -78,6 +80,13 @@ class UDTFField:
         elif isinstance(prop, dm.MappedProperty):
             nullable = prop.nullable if hasattr(prop, "nullable") else True
 
+        # Determine if property is an array type
+        is_array = False
+        if isinstance(prop, dm.MappedProperty):
+            prop_type = prop.type
+            if hasattr(prop_type, "is_list"):
+                is_array = prop_type.is_list
+
         return cls(
             name=prop_name,
             prop_name=prop_name,
@@ -85,6 +94,7 @@ class UDTFField:
             python_type=python_type,
             nullable=nullable,
             description=description,
+            is_array=is_array,
         )
 
     @staticmethod

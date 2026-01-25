@@ -271,6 +271,7 @@ class SparkUDTFGenerator(SDKGenerator):
             "time_series_datapoints_udtf": "time_series_datapoints_udtf.py.jinja",
             "time_series_datapoints_detailed_udtf": "time_series_datapoints_detailed_udtf.py.jinja",
             "time_series_latest_datapoints_udtf": "time_series_latest_datapoints_udtf.py.jinja",
+            "time_series_sql_udtf": "time_series_sql_udtf.py.jinja",
         }
 
         generated_files: dict[str, Path] = {}

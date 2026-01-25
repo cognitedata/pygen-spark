@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from jinja2 import Environment, PackageLoader, select_autoescape
@@ -62,8 +63,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             # Replace tabs with spaces
             escaped = escaped.replace("\t", " ")
             # Collapse multiple spaces
-            while "  " in escaped:
-                escaped = escaped.replace("  ", " ")
+            escaped = re.sub(r"\s+", " ", escaped)
             return escaped.strip()
 
         # Add filter to escape strings for use in Python string literals (with quotes)

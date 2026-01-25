@@ -1,17 +1,41 @@
 """Code generation library for creating Python UDTFs from CDF Data Models."""
 
 from cognite.pygen_spark.config import CDFConnectionConfig
-from cognite.pygen_spark.fields import UDTFField
+
+try:
+    from cognite.pygen_spark.fields import UDTFField
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
+    UDTFField = None  # type: ignore[assignment,misc]
 from cognite.pygen_spark.generator import SparkUDTFGenerator
 from cognite.pygen_spark.models import (
     UDTFGenerationResult,
     ViewSQLGenerationResult,
 )
-from cognite.pygen_spark.time_series_udtfs import (
-    TimeSeriesDatapointsUDTF,
-    TimeSeriesLatestDatapointsUDTF,
-)
-from cognite.pygen_spark.type_converter import TypeConverter
+
+try:
+    from cognite.pygen_spark.time_series_udtfs import (
+        TimeSeriesDatapointsUDTF,
+        TimeSeriesLatestDatapointsUDTF,
+    )
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
+    TimeSeriesDatapointsUDTF = None  # type: ignore[assignment,misc]
+    TimeSeriesLatestDatapointsUDTF = None  # type: ignore[assignment,misc]
+try:
+    from cognite.pygen_spark.type_converter import TypeConverter
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
+    TypeConverter = None  # type: ignore[assignment,misc]
 from cognite.pygen_spark.utils import (
     InstanceId,
     parse_instance_id,
@@ -23,10 +47,6 @@ __all__ = [
     "CDFConnectionConfig",
     "InstanceId",
     "SparkUDTFGenerator",
-    "TimeSeriesDatapointsUDTF",
-    "TimeSeriesLatestDatapointsUDTF",
-    "TypeConverter",
-    "UDTFField",
     "UDTFGenerationResult",
     "ViewSQLGenerationResult",
     "__version__",
@@ -34,5 +54,17 @@ __all__ = [
     "parse_instance_ids",
     "to_udtf_function_name",
 ]
+
+if UDTFField is not None:
+    __all__.append("UDTFField")
+
+if TypeConverter is not None:
+    __all__.append("TypeConverter")
+
+if TimeSeriesDatapointsUDTF is not None:
+    __all__.append("TimeSeriesDatapointsUDTF")
+
+if TimeSeriesLatestDatapointsUDTF is not None:
+    __all__.append("TimeSeriesLatestDatapointsUDTF")
 
 from cognite.pygen_spark._version import __version__
