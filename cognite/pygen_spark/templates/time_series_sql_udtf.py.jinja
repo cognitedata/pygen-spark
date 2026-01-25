@@ -431,26 +431,23 @@ class TimeSeriesSqlUDTF:
                             return now_ms + ms_offset
 
                     # Try parsing as ISO 8601 datetime
-                    try:
-                        # Try various ISO 8601 and SQL timestamp formats
-                        for fmt in [
-                            "%Y-%m-%dT%H:%M:%S.%fZ",
-                            "%Y-%m-%dT%H:%M:%SZ",
-                            "%Y-%m-%dT%H:%M:%S",
-                            "%Y-%m-%d %H:%M:%S.%f",  # SQL timestamp with microseconds
-                            "%Y-%m-%d %H:%M:%S",  # SQL timestamp format
-                        ]:
-                            try:
-                                dt = datetime.strptime(timestamp, fmt)
-                                # Assume UTC if no timezone info
-                                if dt.tzinfo is None:
-                                    dt = dt.replace(tzinfo=timezone.utc)
-                                # Convert to milliseconds since epoch
-                                return int(dt.timestamp() * 1000)
-                            except ValueError:
-                                continue
-                    except Exception:
-                        pass
+                    # Try various ISO 8601 and SQL timestamp formats
+                    for fmt in [
+                        "%Y-%m-%dT%H:%M:%S.%fZ",
+                        "%Y-%m-%dT%H:%M:%SZ",
+                        "%Y-%m-%dT%H:%M:%S",
+                        "%Y-%m-%d %H:%M:%S.%f",  # SQL timestamp with microseconds
+                        "%Y-%m-%d %H:%M:%S",  # SQL timestamp format
+                    ]:
+                        try:
+                            dt = datetime.strptime(timestamp, fmt)
+                            # Assume UTC if no timezone info
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            # Convert to milliseconds since epoch
+                            return int(dt.timestamp() * 1000)
+                        except ValueError:
+                            continue
 
                     # If we can't parse it, raise an error
                     raise ValueError(
@@ -574,28 +571,22 @@ class TimeSeriesSqlUDTF:
 
                                         # Get value based on aggregate type
                                         agg_name = aggregates_str.lower()
-                                        if agg_name == "average":
-                                            val = dp.average
-                                        elif agg_name == "max":
-                                            val = dp.max
-                                        elif agg_name == "min":
-                                            val = dp.min
-                                        elif agg_name == "count":
-                                            val = float(dp.count)
-                                        elif agg_name == "sum":
-                                            val = dp.sum
-                                        elif agg_name == "interpolation":
-                                            val = dp.interpolation
-                                        elif agg_name == "stepinterpolation":
-                                            val = dp.stepInterpolation
-                                        elif agg_name == "continuousvariance":
-                                            val = dp.continuousVariance
-                                        elif agg_name == "discretevariance":
-                                            val = dp.discreteVariance
-                                        elif agg_name == "totalvariation":
-                                            val = dp.totalVariation
-                                        else:
-                                            val = dp.average
+                                        agg_field_map = {
+                                            "average": "average",
+                                            "max": "max",
+                                            "min": "min",
+                                            "count": "count",
+                                            "sum": "sum",
+                                            "interpolation": "interpolation",
+                                            "stepinterpolation": "stepInterpolation",
+                                            "continuousvariance": "continuousVariance",
+                                            "discretevariance": "discreteVariance",
+                                            "totalvariation": "totalVariation",
+                                        }
+                                        field_name = agg_field_map.get(agg_name, "average")
+                                        val = getattr(dp, field_name)
+                                        if agg_name == "count":
+                                            val = float(val)
 
                                         yield (timestamp_dt, val, external_id_val, space_val)
                                         row_count += 1

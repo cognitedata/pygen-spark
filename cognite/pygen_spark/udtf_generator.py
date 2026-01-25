@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
-
-from jinja2 import Environment, PackageLoader, select_autoescape
 
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 # Import relationship types directly from views module (matching pygen-main's approach)
 # Short-term: Import from private API (required until pygen exports this)
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import MultiAPIGenerator  # type: ignore[import-untyped]
+from jinja2 import Environment, PackageLoader, select_autoescape
+
 from cognite.pygen_spark.fields import UDTFField
 
 if TYPE_CHECKING:
@@ -62,8 +63,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             # Replace tabs with spaces
             escaped = escaped.replace("\t", " ")
             # Collapse multiple spaces
-            while "  " in escaped:
-                escaped = escaped.replace("  ", " ")
+            escaped = re.sub(r"\s+", " ", escaped)
             return escaped.strip()
 
         # Add filter to escape strings for use in Python string literals (with quotes)

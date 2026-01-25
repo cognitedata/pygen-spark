@@ -610,28 +610,22 @@ class TimeSeriesDatapointsDetailedUDTF:
                                         # Get value based on aggregate type
                                         if aggregates_str:
                                             agg_name = aggregates_str.lower()
-                                            if agg_name == 'average':
-                                                val = dp.average
-                                            elif agg_name == 'max':
-                                                val = dp.max
-                                            elif agg_name == 'min':
-                                                val = dp.min
-                                            elif agg_name == 'count':
-                                                val = float(dp.count)
-                                            elif agg_name == 'sum':
-                                                val = dp.sum
-                                            elif agg_name == 'interpolation':
-                                                val = dp.interpolation
-                                            elif agg_name == 'stepinterpolation':
-                                                val = dp.stepInterpolation
-                                            elif agg_name == 'continuousvariance':
-                                                val = dp.continuousVariance
-                                            elif agg_name == 'discretevariance':
-                                                val = dp.discreteVariance
-                                            elif agg_name == 'totalvariation':
-                                                val = dp.totalVariation
-                                            else:
-                                                val = dp.average
+                                            agg_field_map = {
+                                                "average": "average",
+                                                "max": "max",
+                                                "min": "min",
+                                                "count": "count",
+                                                "sum": "sum",
+                                                "interpolation": "interpolation",
+                                                "stepinterpolation": "stepInterpolation",
+                                                "continuousvariance": "continuousVariance",
+                                                "discretevariance": "discreteVariance",
+                                                "totalvariation": "totalVariation",
+                                            }
+                                            field_name = agg_field_map.get(agg_name, "average")
+                                            val = getattr(dp, field_name)
+                                            if agg_name == "count":
+                                                val = float(val)
                                         else:
                                             val = dp.average
                                         

@@ -16,8 +16,8 @@ from cognite.client.data_classes.data_modeling.views import (
 
 try:
     from pyspark.sql.types import DataType
-except ImportError:
-    # PySpark may not be available in all environments
+except Exception:
+    # PySpark may not be available or may fail on some platforms
     DataType = object  # type: ignore[assignment, misc]
 
 

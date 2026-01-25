@@ -620,23 +620,13 @@ class {{ view.external_id }}UDTF:
             if is_array_property:
                 # For array properties, use containsAny filter
                 # CDF API: containsAny checks if the array property contains any of the provided values
-                if isinstance(prop_value, list):
-                    # Multiple values: check if array contains any of these values
-                    filter_conditions.append({
-                        "containsAny": {
-                            "property": property_ref,
-                            "values": prop_value,
-                        }
-                    })
-                else:
-                    # Single value: wrap in list and use containsAny
-                    # This is correct for array properties - we're checking if the array contains this value
-                    filter_conditions.append({
-                        "containsAny": {
-                            "property": property_ref,
-                            "values": [prop_value],
-                        }
-                    })
+                values = prop_value if isinstance(prop_value, list) else [prop_value]
+                filter_conditions.append({
+                    "containsAny": {
+                        "property": property_ref,
+                        "values": values,
+                    }
+                })
             else:
                 # For scalar properties, use equals or in filter
                 if isinstance(prop_value, list):

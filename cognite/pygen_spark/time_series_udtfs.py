@@ -10,9 +10,9 @@ use `generate_time_series_udtfs()` which generates scalar-only UDTFs.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol, cast
 
 try:
     from pyspark.sql.types import (
@@ -47,6 +47,29 @@ except ImportError:
 
 if TYPE_CHECKING:
     from cognite.client import CogniteClient
+    from cognite.client.data_classes.data_modeling.ids import NodeId
+
+
+class _Datapoint(Protocol):
+    timestamp: int | None
+    value: float | None
+
+
+class _DatapointsWithTimestamp(Protocol):
+    timestamp: list[int | None]
+
+
+class _AggregateDatapoints(_DatapointsWithTimestamp, Protocol):
+    def __getattr__(self, name: str) -> list[float | None]: ...
+
+
+class _LatestDatapoints(Protocol):
+    instance_id: NodeId | None
+    external_id: str | None
+
+    def __iter__(self) -> Iterator[_Datapoint]: ...
+
+    def __len__(self) -> int: ...
 
 # Wrap critical imports in try-except to handle missing dependencies
 try:
@@ -259,9 +282,10 @@ class TimeSeriesDatapointsUDTF:
                 if aggregates:
                     # For aggregates, access by aggregate name (e.g., .average, .max)
                     aggregate_name = aggregates.lower()
-                    if hasattr(datapoints, aggregate_name):
-                        values = getattr(datapoints, aggregate_name)
-                        timestamps = datapoints.timestamp
+                    datapoints_obj = cast(_AggregateDatapoints, datapoints)
+                    if hasattr(datapoints_obj, aggregate_name):
+                        values = getattr(datapoints_obj, aggregate_name)
+                        timestamps = datapoints_obj.timestamp
                         for ts_ms, val in zip(timestamps, values, strict=False):
                             # Convert milliseconds timestamp to datetime for PySpark TimestampType
                             timestamp_dt = (
@@ -273,18 +297,20 @@ class TimeSeriesDatapointsUDTF:
                         yield (None, None)
                 else:
                     # For raw datapoints, use .value
-                    for dp in datapoints:
+                    datapoints_iter = list(cast(Iterable[_Datapoint], datapoints))
+                    for dp in datapoints_iter:
                         # Convert milliseconds timestamp to datetime for PySpark TimestampType
+                        dp_timestamp = dp.timestamp
                         timestamp_dt = (
-                            datetime.fromtimestamp(dp.timestamp / 1000.0, tz=timezone.utc)
-                            if dp.timestamp is not None
+                            datetime.fromtimestamp(dp_timestamp / 1000.0, tz=timezone.utc)
+                            if dp_timestamp is not None
                             else None
                         )
                         yield (timestamp_dt, dp.value)
 
                     # If no rows were found, yield at least one row with None values
                     # This prevents "end-of-input" error when the time series is empty
-                    if len(datapoints) == 0:
+                    if len(datapoints_iter) == 0:
                         sys.stderr.write(
                             "[UDTF] ⚠ No datapoints found, yielding empty row to prevent 'end-of-input' error\n"
                         )
@@ -461,39 +487,46 @@ class TimeSeriesLatestDatapointsUDTF:
                     yield (None, None, None, None)
                     return
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr]
-                    instance_id=instance_ids,
+                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr,call-arg]
+                    instance_ids=instance_ids,
                     before=before_value,
                     include_status=include_status,
                 )
 
                 # Yield latest datapoints (no space needed - same for all)
                 row_count = 0
-                for dps in datapoints_list:
+                if datapoints_list is None:
+                    datapoints_iter: list[_LatestDatapoints] = []
+                else:
+                    datapoints_iter = list(cast(Iterable[_LatestDatapoints], datapoints_list))
+                for dps in datapoints_iter:
                     if dps is None:  # Time series not found
                         continue
 
                     # Extract external_id from instance_id
-                    ts_external_id = dps.instance_id.external_id if dps.instance_id else None
+                    instance_id = dps.instance_id
+                    ts_external_id = instance_id.external_id if instance_id else None
 
                     if not ts_external_id:
                         # Fallback: try to get from external_id attribute
-                        ts_external_id = dps.external_id if hasattr(dps, "external_id") and dps.external_id else None
+                        ts_external_id = dps.external_id if dps.external_id else None
 
                     # Get the latest datapoint (first in the list)
-                    if len(dps) > 0:
-                        latest_dp = dps[0]
+                    dps_items = list(dps)
+                    if len(dps_items) > 0:
+                        latest_dp = dps_items[0]
                         # Convert milliseconds timestamp to datetime for PySpark TimestampType
+                        latest_timestamp = latest_dp.timestamp
                         timestamp_dt = (
-                            datetime.fromtimestamp(latest_dp.timestamp / 1000.0, tz=timezone.utc)
-                            if latest_dp.timestamp is not None
+                            datetime.fromtimestamp(latest_timestamp / 1000.0, tz=timezone.utc)
+                            if latest_timestamp is not None
                             else None
                         )
                         yield (
                             ts_external_id,
                             timestamp_dt,
                             latest_dp.value,
-                            latest_dp.status_code if include_status else None,
+                            getattr(latest_dp, "status_code", None) if include_status else None,
                         )
                         row_count += 1
 
