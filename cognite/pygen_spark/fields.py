@@ -16,7 +16,7 @@ from cognite.client.data_classes.data_modeling.views import (
 
 try:
     from pyspark.sql.types import DataType
-except Exception:
+except (ImportError, ModuleNotFoundError, AttributeError):
     # PySpark may not be available or may fail on some platforms
     DataType = object  # type: ignore[assignment, misc]
 
