@@ -71,6 +71,7 @@ class _LatestDatapoints(Protocol):
 
     def __len__(self) -> int: ...
 
+
 # Wrap critical imports in try-except to handle missing dependencies
 try:
     from cognite.client import CogniteClient
@@ -487,8 +488,8 @@ class TimeSeriesLatestDatapointsUDTF:
                     yield (None, None, None, None)
                     return
                 # Use instance_id for query
-                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr,call-arg]
-                    instance_ids=instance_ids,
+                datapoints_list = self.client.time_series.data.retrieve_latest(  # type: ignore[union-attr]
+                    instance_id=instance_ids,
                     before=before_value,
                     include_status=include_status,
                 )
