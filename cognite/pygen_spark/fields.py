@@ -13,6 +13,7 @@ from cognite.client.data_classes.data_modeling.views import (
     SingleReverseDirectRelation,
     ViewProperty,
 )
+
 from cognite.pygen.config.reserved_words import is_reserved_word
 
 try:

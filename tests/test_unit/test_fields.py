@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 from cognite.client import data_modeling as dm
-from cognite.pygen._warnings import NameCollisionViewPropertyWarning
 
+from cognite.pygen._warnings import NameCollisionViewPropertyWarning
 from cognite.pygen_spark.fields import UDTFField
 
 try:
