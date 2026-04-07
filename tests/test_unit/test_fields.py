@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 from cognite.client import data_modeling as dm
+from cognite.pygen._warnings import NameCollisionViewPropertyWarning
 
 from cognite.pygen_spark.fields import UDTFField
 
@@ -11,6 +12,8 @@ try:
     from pyspark.sql.types import DataType  # noqa: F401
 except ImportError:
     pytest.skip("PySpark not available", allow_module_level=True)
+
+_TEST_VIEW_ID = dm.ViewId(space="test_space", external_id="SmallBoat", version="v1")
 
 
 class TestUDTFField:
@@ -26,7 +29,7 @@ class TestUDTFField:
             immutable=False,
             auto_increment=False,
         )
-        field = UDTFField.from_property("name", prop)
+        field = UDTFField.from_property("name", prop, _TEST_VIEW_ID)
         assert field is not None
         assert field.name == "name"
         assert field.prop_name == "name"
@@ -43,7 +46,7 @@ class TestUDTFField:
             immutable=False,
             auto_increment=False,
         )
-        field = UDTFField.from_property("boat_guid", prop)
+        field = UDTFField.from_property("boat_guid", prop, _TEST_VIEW_ID)
         assert field is not None
         assert field.name == "boat_guid"
         assert field.nullable is False
@@ -59,7 +62,7 @@ class TestUDTFField:
             immutable=False,
             auto_increment=False,
         )
-        field = UDTFField.from_property("value", prop)
+        field = UDTFField.from_property("value", prop, _TEST_VIEW_ID)
         assert field is not None
         assert field.name == "value"
         assert "Double" in field.spark_type
@@ -74,7 +77,7 @@ class TestUDTFField:
             immutable=False,
             auto_increment=False,
         )
-        field = UDTFField.from_property("is_active", prop)
+        field = UDTFField.from_property("is_active", prop, _TEST_VIEW_ID)
         assert field is not None
         assert field.name == "is_active"
         assert "Boolean" in field.spark_type
@@ -90,7 +93,7 @@ class TestUDTFField:
             auto_increment=False,
             description="Test description",
         )
-        field = UDTFField.from_property("name", prop)
+        field = UDTFField.from_property("name", prop, _TEST_VIEW_ID)
         assert field is not None
         assert field.description == "Test description"
 
@@ -104,6 +107,39 @@ class TestUDTFField:
             immutable=False,
             auto_increment=False,
         )
-        field = UDTFField.from_property("related_id", prop)
+        field = UDTFField.from_property("related_id", prop, _TEST_VIEW_ID)
         assert field is not None
         assert "String" in field.spark_type
+
+    def test_reserved_word_class_rewrites_name(self) -> None:
+        """Python keyword 'class' becomes class_ with original prop_name preserved."""
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="class",
+            type=dm.Text(),
+            nullable=True,
+            immutable=False,
+            auto_increment=False,
+        )
+        with pytest.warns(NameCollisionViewPropertyWarning):
+            field = UDTFField.from_property("class", prop, _TEST_VIEW_ID)
+        assert field is not None
+        assert field.prop_name == "class"
+        assert field.name == "class_"
+        assert field.need_alias is True
+
+    def test_reserved_builtin_type_rewrites_name(self) -> None:
+        """Builtin 'type' collides with pygen field rules and becomes type_."""
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="type",
+            type=dm.Text(),
+            nullable=True,
+            immutable=False,
+            auto_increment=False,
+        )
+        with pytest.warns(NameCollisionViewPropertyWarning):
+            field = UDTFField.from_property("type", prop, _TEST_VIEW_ID)
+        assert field is not None
+        assert field.prop_name == "type"
+        assert field.name == "type_"

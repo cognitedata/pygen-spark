@@ -53,3 +53,35 @@ class TestTemplateRendering:
         # Check that all view properties are included as NULL parameters
         for prop_name in sample_view.properties.keys():
             assert f"{prop_name} => NULL" in sql or f"{prop_name}=>NULL" in sql.replace(" ", "")
+
+    def test_reserved_property_uses_safe_name_in_udtf_and_sql(
+        self,
+        spark_multi_api_generator: SparkMultiAPIGenerator,
+    ) -> None:
+        """CDF property 'class' must map to Python/SQL identifier class_; API keys stay 'class'."""
+        view = dm.View(
+            space="test_space",
+            external_id="ReservedWordView",
+            version="v1",
+            created_time=1,
+            last_updated_time=2,
+            name="",
+            description="",
+            properties={
+                "class": dm.Text(),  # type: ignore[dict-item]
+            },
+            filter=None,
+            implements=None,
+            writable=False,
+            used_for="all",
+            is_global=False,
+        )
+        code = spark_multi_api_generator.generate_udtf(view, include_analyze=True, use_udtf_decorator=False)
+        assert "class_:" in code
+        assert 'filter_params["class"]' in code
+        assert 'StructField("class_' in code
+        assert '{"name": "class"' in code
+
+        sql = spark_multi_api_generator.generate_view_sql(view=view, secret_scope="test_scope")
+        assert "class_" in sql
+        assert "class_ => NULL" in sql.replace(" ", "") or "class_=>NULL" in sql.replace(" ", "")

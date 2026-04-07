@@ -87,6 +87,17 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         # Note: We don't need to store data_model anymore - views are independent
         # and we use view.as_id() directly in the template
 
+    @staticmethod
+    def udtf_fields_for_view(view: View) -> list[UDTFField]:
+        """Build UDTFField list for a view (same order and filtering as UDTF generation)."""
+        fields: list[UDTFField] = []
+        view_id = view.as_id()
+        for prop_name, prop in view.properties.items():
+            udtf_field = UDTFField.from_property(prop_name, prop, view_id)
+            if udtf_field is not None:
+                fields.append(udtf_field)
+        return fields
+
     def generate_udtf(
         self,
         view: View,
@@ -107,12 +118,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         # Load UDTF template using self.env (inherited from parent, but overridden to use our templates)
         template = self.env.get_template("udtf_function.py.jinja")
 
-        # Create UDTFField objects from view properties (matching pygen-main's Field.from_property pattern)
-        udtf_fields = []
-        for prop_name, prop in view.properties.items():
-            udtf_field = UDTFField.from_property(prop_name, prop)
-            if udtf_field is not None:
-                udtf_fields.append(udtf_field)
+        udtf_fields = self.udtf_fields_for_view(view)
 
         # Render template with view and UDTFField objects (matching pygen-main's pattern)
         # Note: Views are independent of data models - we use view.as_id() directly in the template
@@ -164,6 +170,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         # If None, template will use the placeholder strings directly
         template_vars = {
             "view": view,
+            "properties": self.udtf_fields_for_view(view),
             "secret_scope": secret_scope,
             "udtf_name": to_udtf_function_name(view.external_id),  # Use consistent snake_case conversion
         }
