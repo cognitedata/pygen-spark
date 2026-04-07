@@ -4,9 +4,9 @@ SELECT * FROM {{ catalog }}.{{ schema }}.{{ udtf_name }}(
     client_secret => SECRET('{{ secret_scope }}', 'client_secret'),
     tenant_id     => SECRET('{{ secret_scope }}', 'tenant_id'),
     cdf_cluster   => SECRET('{{ secret_scope }}', 'cdf_cluster'),
-    project       => SECRET('{{ secret_scope }}', 'project'){% if view.properties %},{% endif %}
-{%- for prop_name, prop in view.properties.items() %}
-    {{ prop_name }} => NULL{% if not loop.last %},{% endif %}
+    project       => SECRET('{{ secret_scope }}', 'project'){% if properties %},{% endif %}
+{%- for prop in properties %}
+    {{ prop.name }} => NULL{% if not loop.last %},{% endif %}
 {%- endfor %}
 )
 

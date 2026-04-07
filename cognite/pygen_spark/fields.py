@@ -14,6 +14,8 @@ from cognite.client.data_classes.data_modeling.views import (
     ViewProperty,
 )
 
+from cognite.pygen.config.reserved_words import is_reserved_word
+
 try:
     from pyspark.sql.types import DataType
 except (ImportError, ModuleNotFoundError, AttributeError):
@@ -28,8 +30,8 @@ class UDTFField:
     Similar to pygen-main's Field class, but simplified for UDTF needs.
 
     Args:
-        name: Property name (from view.properties key)
-        prop_name: Same as name for UDTFs (no aliasing needed, kept for consistency with pygen-main)
+        name: Safe Python / Spark identifier for generated UDTF parameters and StructField names.
+        prop_name: CDF view property key (used in API filters and response parsing).
         spark_type: Spark SQL type string (e.g., "StringType", "LongType", "ArrayType(StringType)")
         python_type: Python type annotation (e.g., "str", "int", "list[str]")
         nullable: Whether the field is nullable
@@ -45,19 +47,27 @@ class UDTFField:
     description: str | None = None
     is_array: bool = False
 
+    @property
+    def need_alias(self) -> bool:
+        """True when generated Python/SQL name differs from the CDF property id."""
+        return self.name != self.prop_name
+
     @classmethod
     def from_property(
         cls,
         prop_name: str,
         prop: ViewProperty,  # MappedProperty or ConnectionDefinition
+        view_id: dm.ViewId,
     ) -> UDTFField | None:
         """Create UDTFField from a view property.
 
-        Similar to pygen-main's Field.from_property() pattern.
+        Similar to pygen-main's Field.from_property() pattern: reserved Python words get a trailing
+        underscore in ``name`` while ``prop_name`` stays the CDF key.
 
         Args:
             prop_name: The property name (key from view.properties)
             prop: The property object (MappedProperty or ConnectionDefinition)
+            view_id: View identifier for NameCollisionWarning context (use ``view.as_id()``)
 
         Returns:
             UDTFField object, or None if property should be skipped
@@ -87,8 +97,12 @@ class UDTFField:
             if hasattr(prop_type, "is_list"):
                 is_array = prop_type.is_list
 
+        name = prop_name
+        if is_reserved_word(name, "field", view_id, prop_name):
+            name = f"{name}_"
+
         return cls(
-            name=prop_name,
+            name=name,
             prop_name=prop_name,
             spark_type=spark_type,
             python_type=python_type,

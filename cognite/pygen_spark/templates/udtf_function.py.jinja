@@ -380,7 +380,7 @@ class {{ view.external_id }}UDTF:
                 # Extract scalar value (handles PySpark Column objects, preserves datetime objects)
                 extracted_prop = _extract_scalar({{ prop.name }})
                 if extracted_prop is not None:
-                    filter_params["{{ prop.name }}"] = extracted_prop
+                    filter_params["{{ prop.prop_name }}"] = extracted_prop
 {% endfor %}
             filter_json = self._build_filter_json(filter_params)
             
@@ -411,7 +411,7 @@ class {{ view.external_id }}UDTF:
             # Define properties list and view metadata (used in pagination loop)
             properties_list = [
 {% for prop in properties %}
-                {"name": "{{ prop.name }}", "spark_type": "{{ prop.spark_type }}"},
+                {"name": "{{ prop.prop_name }}", "spark_type": "{{ prop.spark_type }}"},
 {% endfor %}
             ]
             view_key = "{{ view.external_id }}/{{ view.version }}"
@@ -540,7 +540,7 @@ class {{ view.external_id }}UDTF:
         # This allows us to check if a property is an array type in the View definition
         property_is_array: dict[str, bool] = {
 {% for prop in properties %}
-            "{{ prop.name }}": {{ prop.is_array }},
+            "{{ prop.prop_name }}": {{ prop.is_array }},
 {% endfor %}
         }
 
