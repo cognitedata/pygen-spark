@@ -280,8 +280,7 @@ class {{ view.external_id }}UDTF:
                         ms = int(value)
                     except (TypeError, ValueError):
                         return None
-                    if ms == 0:
-                        return None
+                    # 0 ms is valid (1970-01-01 UTC); do not treat as null
                     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
                 if isinstance(value, str):
                     stripped = value.strip()
@@ -312,8 +311,6 @@ class {{ view.external_id }}UDTF:
                     try:
                         ms = int(value)
                     except (TypeError, ValueError):
-                        return None
-                    if ms == 0:
                         return None
                     return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).date()
                 if isinstance(value, str):
