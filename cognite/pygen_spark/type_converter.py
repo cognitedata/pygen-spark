@@ -7,9 +7,32 @@ PySpark DataTypes to ensure consistency.
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import TYPE_CHECKING
 
 from cognite.pygen_spark.utils import _check_pyspark_version
+
+
+class SparkValueKind(str, Enum):
+    """How generated UDTF code should normalize API values for a column (``isinstance``-derived).
+
+    Stored on :class:`~cognite.pygen_spark.fields.UDTFField` as the string ``.value`` for Jinja.
+    """
+
+    STRING = "string"
+    LONG = "long"
+    DOUBLE = "double"
+    BOOLEAN = "boolean"
+    TIMESTAMP = "timestamp"
+    DATE = "date"
+    ARRAY_STRING = "array_string"
+    ARRAY_TIMESTAMP = "array_timestamp"
+    ARRAY_LONG = "array_long"
+    ARRAY_DOUBLE = "array_double"
+    ARRAY_BOOLEAN = "array_boolean"
+    ARRAY_DATE = "array_date"
+    ARRAY_GENERIC = "array_generic"
+
 
 try:
     from pyspark.sql.types import (
@@ -83,6 +106,76 @@ class TypeConverter:
             return ArrayType(base_type, containsNull=True)
         else:
             return base_type
+
+    @staticmethod
+    def spark_to_type_instantiation_code(spark_type: DataType) -> str:
+        """Convert PySpark DataType to Python instantiation source for generated UDTF code.
+
+        Uses ``isinstance`` on concrete PySpark types only (no string parsing of CDF types).
+
+        Args:
+            spark_type: PySpark DataType, typically from :meth:`cdf_to_spark`.
+
+        Returns:
+            Expression string such as ``TimestampType()`` or ``ArrayType(StringType())``.
+        """
+        if isinstance(spark_type, ArrayType):
+            inner = TypeConverter.spark_to_type_instantiation_code(spark_type.elementType)
+            return f"ArrayType({inner})"
+        if isinstance(spark_type, StringType):
+            return "StringType()"
+        if isinstance(spark_type, LongType):
+            return "LongType()"
+        if isinstance(spark_type, IntegerType):
+            return "IntegerType()"
+        if isinstance(spark_type, DoubleType):
+            return "DoubleType()"
+        if isinstance(spark_type, BooleanType):
+            return "BooleanType()"
+        if isinstance(spark_type, DateType):
+            return "DateType()"
+        if isinstance(spark_type, TimestampType):
+            return "TimestampType()"
+        return "StringType()"
+
+    @staticmethod
+    def spark_value_kind(spark_type: DataType) -> SparkValueKind:
+        """Classify a PySpark column type for UDTF row normalization (no string parsing).
+
+        Args:
+            spark_type: PySpark ``DataType`` (e.g. from :meth:`cdf_to_spark`).
+
+        Returns:
+            Discriminator used by generated ``_normalize_value`` logic.
+        """
+        if isinstance(spark_type, ArrayType):
+            el = spark_type.elementType
+            if isinstance(el, TimestampType):
+                return SparkValueKind.ARRAY_TIMESTAMP
+            if isinstance(el, DateType):
+                return SparkValueKind.ARRAY_DATE
+            if isinstance(el, StringType):
+                return SparkValueKind.ARRAY_STRING
+            if isinstance(el, (LongType, IntegerType)):
+                return SparkValueKind.ARRAY_LONG
+            if isinstance(el, DoubleType):
+                return SparkValueKind.ARRAY_DOUBLE
+            if isinstance(el, BooleanType):
+                return SparkValueKind.ARRAY_BOOLEAN
+            return SparkValueKind.ARRAY_GENERIC
+        if isinstance(spark_type, TimestampType):
+            return SparkValueKind.TIMESTAMP
+        if isinstance(spark_type, DateType):
+            return SparkValueKind.DATE
+        if isinstance(spark_type, StringType):
+            return SparkValueKind.STRING
+        if isinstance(spark_type, (LongType, IntegerType)):
+            return SparkValueKind.LONG
+        if isinstance(spark_type, DoubleType):
+            return SparkValueKind.DOUBLE
+        if isinstance(spark_type, BooleanType):
+            return SparkValueKind.BOOLEAN
+        return SparkValueKind.STRING
 
     @staticmethod
     def spark_to_sql_ddl(spark_type: DataType) -> str:

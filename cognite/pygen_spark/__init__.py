@@ -29,12 +29,13 @@ except (
     TimeSeriesDatapointsUDTF = None  # type: ignore[assignment,misc]
     TimeSeriesLatestDatapointsUDTF = None  # type: ignore[assignment,misc]
 try:
-    from cognite.pygen_spark.type_converter import TypeConverter
+    from cognite.pygen_spark.type_converter import SparkValueKind, TypeConverter
 except (
     ImportError,
     ModuleNotFoundError,
     AttributeError,
 ):  # pragma: no cover - fallback for environments without PySpark
+    SparkValueKind = None  # type: ignore[assignment,misc]
     TypeConverter = None  # type: ignore[assignment,misc]
 from cognite.pygen_spark.utils import (
     InstanceId,
@@ -60,6 +61,9 @@ if UDTFField is not None:
 
 if TypeConverter is not None:
     __all__.append("TypeConverter")
+
+if SparkValueKind is not None:
+    __all__.append("SparkValueKind")
 
 if TimeSeriesDatapointsUDTF is not None:
     __all__.append("TimeSeriesDatapointsUDTF")

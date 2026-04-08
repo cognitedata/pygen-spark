@@ -82,6 +82,54 @@ class TestUDTFField:
         assert field.name == "is_active"
         assert "Boolean" in field.spark_type
 
+    def test_from_property_timestamp_matches_typeconverter(self) -> None:
+        """CDF Timestamp must map to TimestampType (str(prop.type) is JSON, not class repr)."""
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("cdf_cdm", "CogniteSourceable"),
+            container_property_identifier="sourceCreatedTime",
+            type=dm.Timestamp(is_list=False, max_list_size=None),
+            nullable=True,
+            immutable=False,
+            auto_increment=False,
+        )
+        field = UDTFField.from_property("sourceCreatedTime", prop, _TEST_VIEW_ID)
+        assert field is not None
+        assert field.spark_type == "TimestampType()"
+        assert field.python_type == "datetime"
+        assert field.value_kind == "timestamp"
+
+    def test_from_property_date(self) -> None:
+        """CDF Date maps to DateType via TypeConverter."""
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="on_date",
+            type=dm.Date(is_list=False, max_list_size=None),
+            nullable=True,
+            immutable=False,
+            auto_increment=False,
+        )
+        field = UDTFField.from_property("on_date", prop, _TEST_VIEW_ID)
+        assert field is not None
+        assert field.spark_type == "DateType()"
+        assert field.python_type == "date"
+        assert field.value_kind == "date"
+
+    def test_from_property_text_list(self) -> None:
+        """List-valued Text maps to ArrayType(StringType())."""
+        prop = dm.MappedProperty(
+            container=dm.ContainerId("test_space", "TestContainer"),
+            container_property_identifier="tags",
+            type=dm.Text(is_list=True, max_list_size=1000),
+            nullable=True,
+            immutable=False,
+            auto_increment=False,
+        )
+        field = UDTFField.from_property("tags", prop, _TEST_VIEW_ID)
+        assert field is not None
+        assert field.spark_type == "ArrayType(StringType())"
+        assert field.python_type == "list[str]"
+        assert field.value_kind == "array_string"
+
     def test_from_property_with_description(self) -> None:
         """Test creating UDTFField with description."""
         prop = dm.MappedProperty(

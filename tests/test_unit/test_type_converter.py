@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 from cognite.client import data_modeling as dm
 
-from cognite.pygen_spark.type_converter import TypeConverter
+from cognite.pygen_spark.type_converter import SparkValueKind, TypeConverter
 
 try:
     from pyspark.sql.types import (
@@ -122,6 +122,43 @@ class TestSparkToSqlDdl:
         """Test nested array type."""
         result = TypeConverter.spark_to_sql_ddl(ArrayType(ArrayType(StringType())))
         assert result == "ARRAY<ARRAY<STRING>>"
+
+
+class TestSparkValueKind:
+    """Tests for spark_value_kind (UDTF normalization discriminator)."""
+
+    def test_scalar_kinds(self) -> None:
+        assert TypeConverter.spark_value_kind(StringType()) == SparkValueKind.STRING
+        assert TypeConverter.spark_value_kind(LongType()) == SparkValueKind.LONG
+        assert TypeConverter.spark_value_kind(TimestampType()) == SparkValueKind.TIMESTAMP
+        assert TypeConverter.spark_value_kind(DateType()) == SparkValueKind.DATE
+        assert TypeConverter.spark_value_kind(BooleanType()) == SparkValueKind.BOOLEAN
+        assert TypeConverter.spark_value_kind(DoubleType()) == SparkValueKind.DOUBLE
+
+    def test_array_kinds(self) -> None:
+        assert TypeConverter.spark_value_kind(ArrayType(TimestampType())) == SparkValueKind.ARRAY_TIMESTAMP
+        assert TypeConverter.spark_value_kind(ArrayType(StringType())) == SparkValueKind.ARRAY_STRING
+        assert TypeConverter.spark_value_kind(ArrayType(LongType())) == SparkValueKind.ARRAY_LONG
+
+
+class TestSparkToTypeInstantiationCode:
+    """Tests for spark_to_type_instantiation_code (generated UDTF source fragments)."""
+
+    def test_scalars(self) -> None:
+        """Scalar PySpark types serialize to constructor calls."""
+        assert TypeConverter.spark_to_type_instantiation_code(StringType()) == "StringType()"
+        assert TypeConverter.spark_to_type_instantiation_code(LongType()) == "LongType()"
+        assert TypeConverter.spark_to_type_instantiation_code(TimestampType()) == "TimestampType()"
+        assert TypeConverter.spark_to_type_instantiation_code(DateType()) == "DateType()"
+        assert TypeConverter.spark_to_type_instantiation_code(BooleanType()) == "BooleanType()"
+        assert TypeConverter.spark_to_type_instantiation_code(DoubleType()) == "DoubleType()"
+
+    def test_array_nested(self) -> None:
+        """Array types recurse for nested instantiation code."""
+        assert TypeConverter.spark_to_type_instantiation_code(ArrayType(StringType())) == "ArrayType(StringType())"
+        assert (
+            TypeConverter.spark_to_type_instantiation_code(ArrayType(TimestampType())) == "ArrayType(TimestampType())"
+        )
 
 
 class TestSparkToTypeJson:

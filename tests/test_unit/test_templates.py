@@ -85,3 +85,33 @@ class TestTemplateRendering:
         sql = spark_multi_api_generator.generate_view_sql(view=view, secret_scope="test_scope")
         assert "class_" in sql
         assert "class_ => NULL" in sql.replace(" ", "") or "class_=>NULL" in sql.replace(" ", "")
+
+    def test_udtf_template_normalizes_timestamp_properties(
+        self,
+        spark_multi_api_generator: SparkMultiAPIGenerator,
+    ) -> None:
+        """Timestamp view properties must be converted to datetime for Arrow (epoch ms from API)."""
+        view = dm.View(
+            space="test_space",
+            external_id="TsPropView",
+            version="v1",
+            created_time=1,
+            last_updated_time=2,
+            name="",
+            description="",
+            properties={
+                "uploadedTime": dm.Timestamp(),  # type: ignore[dict-item]
+            },
+            filter=None,
+            implements=None,
+            writable=False,
+            used_for="all",
+            is_global=False,
+        )
+        code = spark_multi_api_generator.generate_udtf(view, include_analyze=True, use_udtf_decorator=False)
+        assert "def _cdf_timestamp_value_to_datetime" in code
+        assert "if ms == 0" not in code  # epoch 0 is a valid timestamp, not null
+        assert '"value_kind"' in code
+        assert 'if value_kind == "timestamp"' in code
+        assert '_normalize_value(prop_value, prop["value_kind"])' in code
+        assert '_cdf_timestamp_value_to_datetime(item.get("createdTime"))' in code
