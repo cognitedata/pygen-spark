@@ -17,7 +17,7 @@ from cognite.client.data_classes.data_modeling.views import (
 )
 from cognite.pygen.config.reserved_words import is_reserved_word
 
-from cognite.pygen_spark.type_converter import TypeConverter
+from cognite.pygen_spark.type_converter import SparkValueKind, TypeConverter
 
 try:
     from pyspark.sql.types import DataType
@@ -40,6 +40,7 @@ class UDTFField:
         nullable: Whether the field is nullable
         description: Optional description of the field
         is_array: Whether the property is an array type in the View definition
+        value_kind: Normalization discriminator derived from PySpark ``DataType`` (``SparkValueKind.value``)
     """
 
     name: str
@@ -49,6 +50,7 @@ class UDTFField:
     nullable: bool
     description: str | None = None
     is_array: bool = False
+    value_kind: str = SparkValueKind.STRING.value
 
     @property
     def need_alias(self) -> bool:
@@ -82,9 +84,10 @@ class UDTFField:
             # which ruff will complain about. (These come from the Core model)
             description = prop.description.replace("'", "'").replace("'", "'")
 
-        # Determine spark_type and python_type
-        spark_type = cls._get_spark_type(prop)
-        python_type = cls._get_python_type(prop)
+        spark_dt = cls._get_spark_type_object(prop)
+        spark_type = TypeConverter.spark_to_type_instantiation_code(spark_dt)
+        value_kind = TypeConverter.spark_value_kind(spark_dt).value
+        python_type = cls._spark_type_to_python_type(spark_dt)
 
         # Determine nullable
         nullable = True
@@ -112,61 +115,13 @@ class UDTFField:
             nullable=nullable,
             description=description,
             is_array=is_array,
+            value_kind=value_kind,
         )
 
     @staticmethod
     def _get_spark_type(prop: ViewProperty) -> str:
-        """Convert CDF property type to Spark type instantiation code via TypeConverter.
-
-        Args:
-            prop: Property object from view.properties
-
-        Returns:
-            Spark SQL type instantiation code (e.g., "StringType()", "LongType()", "ArrayType(StringType())")
-        """
-
-        # Check connection definitions first (matching pygen-main's pattern)
-        if isinstance(prop, MultiReverseDirectRelation):
-            # UC SQL registration rejects ARRAY type_json for relationship inputs.
-            # Represent multi-relations as JSON strings instead.
-            return "StringType()"
-        elif isinstance(prop, SingleReverseDirectRelation):
-            return "StringType()"
-
-        # Check if it's a MappedProperty with a DirectRelation type
-        if isinstance(prop, dm.MappedProperty):
-            prop_type = prop.type
-            if isinstance(prop_type, dm.DirectRelation):
-                # Represent multi relations as JSON strings to keep UC registration compatible.
-                if prop_type.is_list if hasattr(prop_type, "is_list") else False:
-                    return "StringType()"
-                return "StringType()"
-
-            is_list = bool(getattr(prop_type, "is_list", False))
-            spark_dt = TypeConverter.cdf_to_spark(prop_type, is_array=is_list)
-            return TypeConverter.spark_to_type_instantiation_code(spark_dt)
-
-        # Default fallback for unknown property types
-        return "StringType()"
-
-    @staticmethod
-    def _get_python_type(prop: ViewProperty) -> str:
-        """Convert CDF property type to Python type annotation string.
-
-        Uses PySpark DataType as the source of truth to ensure consistency
-        with Spark types and Python types.
-
-        Args:
-            prop: Property object from view.properties
-
-        Returns:
-            Python type annotation string (e.g., "str", "int", "list[str]")
-        """
-        # Get the PySpark type object (which already handles is_list correctly)
-        spark_type = UDTFField._get_spark_type_object(prop)
-
-        # Convert PySpark DataType to Python type annotation
-        return UDTFField._spark_type_to_python_type(spark_type)
+        """Return Spark type instantiation code string (same object graph as :meth:`_get_spark_type_object`)."""
+        return TypeConverter.spark_to_type_instantiation_code(UDTFField._get_spark_type_object(prop))
 
     @staticmethod
     def _spark_type_to_python_type(spark_type: DataType) -> str:

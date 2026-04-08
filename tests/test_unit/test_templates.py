@@ -110,6 +110,7 @@ class TestTemplateRendering:
         )
         code = spark_multi_api_generator.generate_udtf(view, include_analyze=True, use_udtf_decorator=False)
         assert "def _cdf_timestamp_value_to_datetime" in code
-        assert 'if "Timestamp" in spark_type' in code
-        assert "_cdf_timestamp_value_to_datetime(extracted)" in code
+        assert '"value_kind"' in code
+        assert 'if value_kind == "timestamp"' in code
+        assert '_normalize_value(prop_value, prop["value_kind"])' in code
         assert "_cdf_timestamp_value_to_datetime(item.get(\"createdTime\"))" in code

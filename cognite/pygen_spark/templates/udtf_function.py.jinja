@@ -298,98 +298,131 @@ class {{ view.external_id }}UDTF:
                         return None
                 return None
 
-            def _normalize_value(value: object, spark_type: str) -> object:
-                """Normalize values to match expected Spark types."""
+            def _cdf_date_value_to_date(value: object) -> object:
+                """Convert CDF date payloads to datetime.date for Spark DATE / Arrow."""
+                from datetime import date as date_cls, datetime, timezone
+
                 if value is None:
                     return None
-                
-                # CRITICAL: For arrays, handle lists directly FIRST (before any extraction)
-                # For ArrayType, PySpark expects a Python list, NOT a JSON string
-                if "Array" in spark_type:
+                if isinstance(value, datetime):
+                    return value.date()
+                if isinstance(value, date_cls):
+                    return value
+                if isinstance(value, (int, float)):
+                    try:
+                        ms = int(value)
+                    except (TypeError, ValueError):
+                        return None
+                    if ms == 0:
+                        return None
+                    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc).date()
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if not stripped:
+                        return None
+                    try:
+                        if stripped.endswith("Z"):
+                            stripped = stripped[:-1] + "+00:00"
+                        if "T" in stripped:
+                            dt = datetime.fromisoformat(stripped)
+                            return dt.date()
+                        return date_cls.fromisoformat(stripped)
+                    except ValueError:
+                        return None
+                return None
+
+            def _maybe_map_array_elements(lst: list, value_kind: str) -> list:
+                """Normalize list elements when the view column is an array of timestamps or dates."""
+                if value_kind == "array_timestamp":
+                    return [_cdf_timestamp_value_to_datetime(v) for v in lst]
+                if value_kind == "array_date":
+                    return [_cdf_date_value_to_date(v) for v in lst]
+                return lst
+
+            def _normalize_value(value: object, value_kind: str) -> object:
+                """Normalize values to match expected Spark types.
+
+                ``value_kind`` is derived from PySpark DataType at codegen (``SparkValueKind``).
+                """
+                if value is None:
+                    return None
+
+                is_array = value_kind.startswith("array_")
+
+                # Arrays: lists and JSON array strings (PySpark expects a Python list)
+                if is_array:
                     if isinstance(value, list):
-                        # Already a list from API - return as-is (PySpark expects list for ArrayType)
-                        return value
-                    
-                    # If it's a JSON string, parse it to a list
+                        return _maybe_map_array_elements(value, value_kind)
+
                     if isinstance(value, str):
                         stripped = value.strip()
                         if stripped.startswith("[") and stripped.endswith("]"):
                             try:
                                 parsed = json.loads(value)
                                 if isinstance(parsed, list):
-                                    # Check for double-encoding (first element is a JSON string)
                                     if parsed and isinstance(parsed[0], str):
                                         inner_stripped = parsed[0].strip()
                                         if inner_stripped.startswith("[") and inner_stripped.endswith("]"):
-                                            # Double-encoded! Parse the inner JSON string
                                             try:
                                                 inner_parsed = json.loads(parsed[0])
                                                 if isinstance(inner_parsed, list):
-                                                    return inner_parsed
+                                                    return _maybe_map_array_elements(inner_parsed, value_kind)
                                             except (json.JSONDecodeError, ValueError):
                                                 pass
-                                    # Valid JSON array - return as list (PySpark expects list)
-                                    return parsed
+                                    return _maybe_map_array_elements(parsed, value_kind)
                             except (json.JSONDecodeError, ValueError):
-                                # Not valid JSON, continue with normal extraction
                                 pass
-                
-                # For non-arrays or arrays that need extraction (e.g., DirectRelation lists)
+
                 extracted = _extract_property_value_from_dict(value)
                 if extracted is None:
                     return None
-                
-                # If extraction returned a list (for arrays), return it directly (PySpark expects list)
-                if "Array" in spark_type and isinstance(extracted, list):
-                    return extracted
-                
-                # If extraction returned a string that looks like JSON array, parse it to a list
-                if "Array" in spark_type and isinstance(extracted, str):
+
+                if is_array and isinstance(extracted, list):
+                    return _maybe_map_array_elements(extracted, value_kind)
+
+                if is_array and isinstance(extracted, str):
                     stripped = extracted.strip()
                     if stripped.startswith("[") and stripped.endswith("]"):
                         try:
                             parsed = json.loads(extracted)
                             if isinstance(parsed, list):
-                                # Check for double-encoding
                                 if parsed and isinstance(parsed[0], str):
                                     inner_stripped = parsed[0].strip()
                                     if inner_stripped.startswith("[") and inner_stripped.endswith("]"):
-                                        # Double-encoded! Parse the inner JSON string
                                         try:
                                             inner_parsed = json.loads(parsed[0])
                                             if isinstance(inner_parsed, list):
-                                                return inner_parsed
+                                                return _maybe_map_array_elements(inner_parsed, value_kind)
                                         except (json.JSONDecodeError, ValueError):
                                             pass
-                                return parsed
+                                return _maybe_map_array_elements(parsed, value_kind)
                         except (json.JSONDecodeError, ValueError):
                             pass
-                
-                # CRITICAL FIX: Handle relationship properties stored as StringType but can be lists
-                # DirectRelation properties (like files, activities, timeSeries) are stored as StringType
-                # but can contain lists/dicts that need JSON encoding
-                if "StringType" in spark_type and isinstance(extracted, (list, dict)):
-                    # Relationship properties that are lists/dicts must be JSON-encoded
+
+                # StringType columns: JSON-encode list/dict relation payloads
+                if value_kind == "string" and isinstance(extracted, (list, dict)):
                     return json.dumps(extracted, ensure_ascii=False)
-                
-                if "Long" in spark_type or "Integer" in spark_type:
+
+                if value_kind == "long":
                     try:
                         return int(extracted)
                     except (TypeError, ValueError):
                         return None
-                if "Double" in spark_type or "Float" in spark_type:
+                if value_kind == "double":
                     try:
                         return float(extracted)
                     except (TypeError, ValueError):
                         return None
-                if "Boolean" in spark_type:
+                if value_kind == "boolean":
                     if isinstance(extracted, bool):
                         return extracted
                     if isinstance(extracted, str):
                         return extracted.strip().lower() in {"true", "1", "yes"}
                     return bool(extracted)
-                if "Timestamp" in spark_type:
+                if value_kind == "timestamp":
                     return _cdf_timestamp_value_to_datetime(extracted)
+                if value_kind == "date":
+                    return _cdf_date_value_to_date(extracted)
                 return extracted
             
             # Extract scalar values from Python inputs
@@ -444,7 +477,7 @@ class {{ view.external_id }}UDTF:
             # Define properties list and view metadata (used in pagination loop)
             properties_list = [
 {% for prop in properties %}
-                {"name": "{{ prop.prop_name }}", "spark_type": "{{ prop.spark_type }}"},
+                {"name": "{{ prop.prop_name }}", "spark_type": "{{ prop.spark_type }}", "value_kind": "{{ prop.value_kind }}"},
 {% endfor %}
             ]
             view_key = "{{ view.external_id }}/{{ view.version }}"
@@ -520,8 +553,8 @@ class {{ view.external_id }}UDTF:
                         if prop_value is None and prop_name in item:
                             prop_value = item.get(prop_name)
                         
-                        # Normalize the value (handles arrays correctly)
-                        normalized_value = _normalize_value(prop_value, prop["spark_type"])
+                        # Normalize the value (value_kind from PySpark DataType at codegen)
+                        normalized_value = _normalize_value(prop_value, prop["value_kind"])
                         
                         row_values.append(normalized_value)
                     

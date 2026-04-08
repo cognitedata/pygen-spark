@@ -96,6 +96,7 @@ class TestUDTFField:
         assert field is not None
         assert field.spark_type == "TimestampType()"
         assert field.python_type == "datetime"
+        assert field.value_kind == "timestamp"
 
     def test_from_property_date(self) -> None:
         """CDF Date maps to DateType via TypeConverter."""
@@ -111,6 +112,7 @@ class TestUDTFField:
         assert field is not None
         assert field.spark_type == "DateType()"
         assert field.python_type == "date"
+        assert field.value_kind == "date"
 
     def test_from_property_text_list(self) -> None:
         """List-valued Text maps to ArrayType(StringType())."""
@@ -126,6 +128,7 @@ class TestUDTFField:
         assert field is not None
         assert field.spark_type == "ArrayType(StringType())"
         assert field.python_type == "list[str]"
+        assert field.value_kind == "array_string"
 
     def test_from_property_with_description(self) -> None:
         """Test creating UDTFField with description."""
