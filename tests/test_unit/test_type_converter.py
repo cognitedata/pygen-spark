@@ -124,6 +124,30 @@ class TestSparkToSqlDdl:
         assert result == "ARRAY<ARRAY<STRING>>"
 
 
+class TestSparkToTypeInstantiationCode:
+    """Tests for spark_to_type_instantiation_code (generated UDTF source fragments)."""
+
+    def test_scalars(self) -> None:
+        """Scalar PySpark types serialize to constructor calls."""
+        assert TypeConverter.spark_to_type_instantiation_code(StringType()) == "StringType()"
+        assert TypeConverter.spark_to_type_instantiation_code(LongType()) == "LongType()"
+        assert TypeConverter.spark_to_type_instantiation_code(TimestampType()) == "TimestampType()"
+        assert TypeConverter.spark_to_type_instantiation_code(DateType()) == "DateType()"
+        assert TypeConverter.spark_to_type_instantiation_code(BooleanType()) == "BooleanType()"
+        assert TypeConverter.spark_to_type_instantiation_code(DoubleType()) == "DoubleType()"
+
+    def test_array_nested(self) -> None:
+        """Array types recurse for nested instantiation code."""
+        assert (
+            TypeConverter.spark_to_type_instantiation_code(ArrayType(StringType()))
+            == "ArrayType(StringType())"
+        )
+        assert (
+            TypeConverter.spark_to_type_instantiation_code(ArrayType(TimestampType()))
+            == "ArrayType(TimestampType())"
+        )
+
+
 class TestSparkToTypeJson:
     """Tests for spark_to_type_json conversion."""
 

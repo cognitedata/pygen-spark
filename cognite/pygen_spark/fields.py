@@ -1,6 +1,8 @@
 """UDTFField - Field representation for UDTF generation.
 
 Similar to pygen-main's Field class, but simplified for UDTF needs.
+CDF ``PropertyType`` values are mapped via :class:`~cognite.pygen_spark.type_converter.TypeConverter`
+(``isinstance`` / PySpark DataTypes), not ``str(prop.type)`` — Cognite types stringify as JSON dumps.
 """
 
 from __future__ import annotations
@@ -13,8 +15,9 @@ from cognite.client.data_classes.data_modeling.views import (
     SingleReverseDirectRelation,
     ViewProperty,
 )
-
 from cognite.pygen.config.reserved_words import is_reserved_word
+
+from cognite.pygen_spark.type_converter import TypeConverter
 
 try:
     from pyspark.sql.types import DataType
@@ -32,7 +35,7 @@ class UDTFField:
     Args:
         name: Safe Python / Spark identifier for generated UDTF parameters and StructField names.
         prop_name: CDF view property key (used in API filters and response parsing).
-        spark_type: Spark SQL type string (e.g., "StringType", "LongType", "ArrayType(StringType)")
+        spark_type: PySpark type as a constructor expression (e.g. ``StringType()``, from TypeConverter)
         python_type: Python type annotation (e.g., "str", "int", "list[str]")
         nullable: Whether the field is nullable
         description: Optional description of the field
@@ -113,7 +116,7 @@ class UDTFField:
 
     @staticmethod
     def _get_spark_type(prop: ViewProperty) -> str:
-        """Convert CDF property type to Spark type instantiation code.
+        """Convert CDF property type to Spark type instantiation code via TypeConverter.
 
         Args:
             prop: Property object from view.properties
@@ -121,26 +124,6 @@ class UDTFField:
         Returns:
             Spark SQL type instantiation code (e.g., "StringType()", "LongType()", "ArrayType(StringType())")
         """
-
-        # Helper to get base type string
-        def get_base_type(prop_type: object) -> str:
-            """Get base Spark type string."""
-            if prop_type is None:
-                return "StringType"
-
-            type_name = str(prop_type)
-            if "Text" in type_name or "str" in type_name.lower():
-                return "StringType"
-            elif "Int" in type_name or "int" in type_name.lower():
-                return "LongType"
-            elif "Float" in type_name or "float" in type_name.lower() or "Double" in type_name:
-                return "DoubleType"
-            elif "Bool" in type_name or "bool" in type_name.lower():
-                return "BooleanType"
-            elif "Timestamp" in type_name or "DateTime" in type_name:
-                return "TimestampType"
-            else:
-                return "StringType"  # Default fallback
 
         # Check connection definitions first (matching pygen-main's pattern)
         if isinstance(prop, MultiReverseDirectRelation):
@@ -159,17 +142,9 @@ class UDTFField:
                     return "StringType()"
                 return "StringType()"
 
-            # Handle primitive types from MappedProperty
-            # Check if it's a list type
-            is_list = False
-            if hasattr(prop_type, "is_list"):
-                is_list = prop_type.is_list
-
-            base_type = get_base_type(prop_type)
-            if is_list:
-                return f"ArrayType({base_type}())"
-            else:
-                return f"{base_type}()"
+            is_list = bool(getattr(prop_type, "is_list", False))
+            spark_dt = TypeConverter.cdf_to_spark(prop_type, is_array=is_list)
+            return TypeConverter.spark_to_type_instantiation_code(spark_dt)
 
         # Default fallback for unknown property types
         return "StringType()"
@@ -209,6 +184,7 @@ class UDTFField:
                 BooleanType,
                 DateType,
                 DoubleType,
+                IntegerType,
                 LongType,
                 StringType,
                 TimestampType,
@@ -223,22 +199,20 @@ class UDTFField:
             element_python_type = UDTFField._spark_type_to_python_type(element_type)
             return f"list[{element_python_type}]"
 
-        # Map base PySpark types to Python types
+        # Map base PySpark types to Python types (isinstance-only, aligned with TypeConverter)
         if isinstance(spark_type, StringType):
             return "str"
-        elif isinstance(spark_type, LongType):
+        if isinstance(spark_type, (LongType, IntegerType)):
             return "int"
-        elif isinstance(spark_type, DoubleType):
+        if isinstance(spark_type, DoubleType):
             return "float"
-        elif isinstance(spark_type, BooleanType):
+        if isinstance(spark_type, BooleanType):
             return "bool"
-        elif isinstance(spark_type, TimestampType):
+        if isinstance(spark_type, TimestampType):
             return "datetime"
-        elif isinstance(spark_type, DateType):
+        if isinstance(spark_type, DateType):
             return "date"
-        else:
-            # Default fallback
-            return "str"
+        return "str"
 
     @staticmethod
     def _get_spark_type_object(prop: ViewProperty) -> DataType:
@@ -253,67 +227,23 @@ class UDTFField:
         Returns:
             PySpark DataType object (e.g., StringType(), ArrayType(StringType()))
         """
-        try:
-            from pyspark.sql.types import (
-                ArrayType,
-                BooleanType,
-                DoubleType,
-                LongType,
-                StringType,
-                TimestampType,
-            )
-        except ImportError:
-            # If PySpark is not available, return a placeholder
-            # This allows the code to work even if PySpark is not installed
-            return StringType()  # type: ignore[return-value]
-
-        # Helper to get base type object
-        def get_base_type_object(prop_type: object) -> DataType:
-            """Get base Spark type object."""
-            if prop_type is None:
-                return StringType()
-
-            type_name = str(prop_type)
-            if "Text" in type_name or "str" in type_name.lower():
-                return StringType()
-            elif "Int" in type_name or "int" in type_name.lower():
-                return LongType()
-            elif "Float" in type_name or "float" in type_name.lower() or "Double" in type_name:
-                return DoubleType()
-            elif "Bool" in type_name or "bool" in type_name.lower():
-                return BooleanType()
-            elif "Timestamp" in type_name or "DateTime" in type_name:
-                return TimestampType()
-            else:
-                return StringType()  # Default fallback
+        from pyspark.sql.types import StringType
 
         # Check connection definitions first (matching pygen-main's pattern)
         if isinstance(prop, MultiReverseDirectRelation):
             # Represent multi relations as JSON strings to keep UC registration compatible.
             return StringType()
-        elif isinstance(prop, SingleReverseDirectRelation):
+        if isinstance(prop, SingleReverseDirectRelation):
             return StringType()
 
-        # Check if it's a MappedProperty with a DirectRelation type
         if isinstance(prop, dm.MappedProperty):
             prop_type = prop.type
             if isinstance(prop_type, dm.DirectRelation):
-                # Represent multi relations as JSON strings to keep UC registration compatible.
                 if prop_type.is_list if hasattr(prop_type, "is_list") else False:
                     return StringType()
                 return StringType()
 
-            # Handle primitive types from MappedProperty
-            # Check if it's a list type
-            is_list = False
-            if hasattr(prop_type, "is_list"):
-                is_list = prop_type.is_list
+            is_list = bool(getattr(prop_type, "is_list", False))
+            return TypeConverter.cdf_to_spark(prop_type, is_array=is_list)
 
-            base_type = get_base_type_object(prop_type)
-            if is_list:
-                return ArrayType(base_type, containsNull=True)
-            else:
-                return base_type
-
-        # Default fallback for unknown property types
         return StringType()

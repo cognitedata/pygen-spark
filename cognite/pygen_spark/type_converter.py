@@ -85,6 +85,37 @@ class TypeConverter:
             return base_type
 
     @staticmethod
+    def spark_to_type_instantiation_code(spark_type: DataType) -> str:
+        """Convert PySpark DataType to Python instantiation source for generated UDTF code.
+
+        Uses ``isinstance`` on concrete PySpark types only (no string parsing of CDF types).
+
+        Args:
+            spark_type: PySpark DataType, typically from :meth:`cdf_to_spark`.
+
+        Returns:
+            Expression string such as ``TimestampType()`` or ``ArrayType(StringType())``.
+        """
+        if isinstance(spark_type, ArrayType):
+            inner = TypeConverter.spark_to_type_instantiation_code(spark_type.elementType)
+            return f"ArrayType({inner})"
+        if isinstance(spark_type, StringType):
+            return "StringType()"
+        if isinstance(spark_type, LongType):
+            return "LongType()"
+        if isinstance(spark_type, IntegerType):
+            return "IntegerType()"
+        if isinstance(spark_type, DoubleType):
+            return "DoubleType()"
+        if isinstance(spark_type, BooleanType):
+            return "BooleanType()"
+        if isinstance(spark_type, DateType):
+            return "DateType()"
+        if isinstance(spark_type, TimestampType):
+            return "TimestampType()"
+        return "StringType()"
+
+    @staticmethod
     def spark_to_sql_ddl(spark_type: DataType) -> str:
         """Convert PySpark DataType to SQL DDL type string.
 

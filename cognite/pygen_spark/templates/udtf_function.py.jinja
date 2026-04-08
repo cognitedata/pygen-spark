@@ -267,6 +267,37 @@ class {{ view.external_id }}UDTF:
                     return external_id
                 return value
             
+            from datetime import datetime, timezone
+
+            def _cdf_timestamp_value_to_datetime(value: object) -> object:
+                """Convert CDF timestamp payloads to timezone-aware datetime for Spark TIMESTAMP / Arrow."""
+                if value is None:
+                    return None
+                if isinstance(value, datetime):
+                    return value
+                if isinstance(value, (int, float)):
+                    try:
+                        ms = int(value)
+                    except (TypeError, ValueError):
+                        return None
+                    if ms == 0:
+                        return None
+                    return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
+                if isinstance(value, str):
+                    stripped = value.strip()
+                    if not stripped:
+                        return None
+                    try:
+                        if stripped.endswith("Z"):
+                            stripped = stripped[:-1] + "+00:00"
+                        dt = datetime.fromisoformat(stripped)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        return dt
+                    except ValueError:
+                        return None
+                return None
+
             def _normalize_value(value: object, spark_type: str) -> object:
                 """Normalize values to match expected Spark types."""
                 if value is None:
@@ -357,6 +388,8 @@ class {{ view.external_id }}UDTF:
                     if isinstance(extracted, str):
                         return extracted.strip().lower() in {"true", "1", "yes"}
                     return bool(extracted)
+                if "Timestamp" in spark_type:
+                    return _cdf_timestamp_value_to_datetime(extracted)
                 return extracted
             
             # Extract scalar values from Python inputs
@@ -495,18 +528,10 @@ class {{ view.external_id }}UDTF:
                     row_values.append(item.get("space", None))
                     row_values.append(item.get("externalId") or item.get("external_id", None))
                     
-                    # Extract and convert timestamp fields (milliseconds to datetime)
-                    from datetime import datetime, timezone
-                    
-                    def ms_to_datetime(ms: int | None) -> datetime | None:
-                        """Convert milliseconds timestamp to datetime."""
-                        if ms is None:
-                            return None
-                        return datetime.fromtimestamp(ms / 1000.0, tz=timezone.utc)
-                    
-                    row_values.append(ms_to_datetime(item.get("createdTime")))
-                    row_values.append(ms_to_datetime(item.get("lastUpdatedTime")))
-                    row_values.append(ms_to_datetime(item.get("deletedTime")))
+                    # Instance metadata timestamps (same conversion as TimestampType view properties)
+                    row_values.append(_cdf_timestamp_value_to_datetime(item.get("createdTime")))
+                    row_values.append(_cdf_timestamp_value_to_datetime(item.get("lastUpdatedTime")))
+                    row_values.append(_cdf_timestamp_value_to_datetime(item.get("deletedTime")))
                     
                     yield tuple(row_values)
                 
