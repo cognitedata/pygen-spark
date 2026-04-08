@@ -23,7 +23,7 @@ classifiers = [
 ]
 
 dependencies = [
-    "cognite-pygen>=1.2.29",
+    "cognite-pygen>=1.3.0",
     "cognite-sdk>=7.90.1",
     "jinja2>=3.0.0",
     "typing_extensions>=4.5.0",  # Required by pydantic (for Sentinel support)
