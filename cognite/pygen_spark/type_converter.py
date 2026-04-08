@@ -33,6 +33,7 @@ class SparkValueKind(str, Enum):
     ARRAY_DATE = "array_date"
     ARRAY_GENERIC = "array_generic"
 
+
 try:
     from pyspark.sql.types import (
         ArrayType,

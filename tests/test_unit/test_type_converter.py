@@ -155,13 +155,9 @@ class TestSparkToTypeInstantiationCode:
 
     def test_array_nested(self) -> None:
         """Array types recurse for nested instantiation code."""
+        assert TypeConverter.spark_to_type_instantiation_code(ArrayType(StringType())) == "ArrayType(StringType())"
         assert (
-            TypeConverter.spark_to_type_instantiation_code(ArrayType(StringType()))
-            == "ArrayType(StringType())"
-        )
-        assert (
-            TypeConverter.spark_to_type_instantiation_code(ArrayType(TimestampType()))
-            == "ArrayType(TimestampType())"
+            TypeConverter.spark_to_type_instantiation_code(ArrayType(TimestampType())) == "ArrayType(TimestampType())"
         )
 
 
