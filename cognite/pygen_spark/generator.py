@@ -57,6 +57,7 @@ class SparkUDTFGenerator(SDKGenerator):
             **kwargs: Additional arguments passed to parent SDKGenerator. Use
                 ``cdf_audit_deployment_tail`` (default ``GenericSpark``) to set the fourth
                 segment of generated ``x-cdp-app`` (e.g. ``Databricks`` from cognite-databricks).
+                Explicit ``None`` is treated as the default (avoids ``str(None)`` in headers).
 
         Raises:
             RuntimeError: If PySpark version is less than 4.0.0
@@ -64,7 +65,7 @@ class SparkUDTFGenerator(SDKGenerator):
         # Check PySpark version before proceeding
         _check_pyspark_version()
 
-        cdf_audit_deployment_tail = str(kwargs.pop("cdf_audit_deployment_tail", "GenericSpark"))
+        cdf_audit_deployment_tail = str(kwargs.pop("cdf_audit_deployment_tail", None) or "GenericSpark")
 
         # Load data model if it's an identifier
         loaded_data_model = self._load_data_model(data_model, client)
