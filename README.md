@@ -28,6 +28,7 @@ Full release notes are published on [GitHub Releases](https://github.com/cognite
 - **Time Series UDTFs**: Template-generated UDTFs for querying CDF time series datapoints (single, multiple, latest) using the same template-based generation as Data Model UDTFs
 - **Type Safety**: Leverages pygen's internal representation for strongly-typed code generation
 - **Predicate Pushdown**: Generated UDTFs support filter translation from Spark SQL to CDF API filters
+- **CDF audit headers**: Generated UDTF HTTP clients send pygen-main-style `x-cdp-app`, `x-cdp-sdk`, and `User-Agent` for attributable CDF traffic
 - **Configuration File Support**: Uses TOML/YAML configuration files for secure credential management
 - **Generic Spark Support**: Works with any Spark cluster, not limited to Databricks
 - **Type Conversion Utilities**: `TypeConverter` class for converting between CDF types, PySpark DataTypes, and SQL DDL
