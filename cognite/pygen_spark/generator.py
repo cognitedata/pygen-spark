@@ -44,7 +44,7 @@ class SparkUDTFGenerator(SDKGenerator):
         data_model: DataModel,
         top_level_package: str = "cognite_databricks",
         client_name: str = "CogniteDatabricksClient",
-        **kwargs: dict[str, object],
+        **kwargs: object,
     ) -> None:
         """Initialize the Spark UDTF generator.
 
