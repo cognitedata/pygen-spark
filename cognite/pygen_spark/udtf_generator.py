@@ -12,6 +12,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 # Short-term: Import from private API (required until pygen exports this)
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import MultiAPIGenerator  # type: ignore[import-untyped]
+from cognite.pygen_spark.audit import cdf_audit_http_template_context
 from cognite.pygen_spark.fields import UDTFField
 
 if TYPE_CHECKING:
@@ -103,6 +104,10 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         view: View,
         include_analyze: bool = True,
         use_udtf_decorator: bool = True,
+        *,
+        cdf_audit_component: str = "StandaloneUDTF",
+        cdf_audit_tail: str = "GenericSpark",
+        pygen_spark_version: str | None = None,
     ) -> str:
         """Generate Python UDTF code for a View.
 
@@ -111,6 +116,9 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             include_analyze: If True, includes analyze() method (for session-scoped).
                             If False, omits analyze() (for Unity Catalog).
             use_udtf_decorator: If True, adds @udtf decorator to the class.
+            cdf_audit_component: Third segment of x-cdp-app (pygen-main-style colon-separated id).
+            cdf_audit_tail: Fourth segment (e.g. Databricks vs GenericSpark).
+            pygen_spark_version: Override embedded package version for audit strings.
 
         Returns:
             Generated UDTF Python code as string (formatted with Black)
@@ -120,6 +128,12 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
 
         udtf_fields = self.udtf_fields_for_view(view)
 
+        audit_ctx = cdf_audit_http_template_context(
+            audit_component=cdf_audit_component,
+            audit_tail=cdf_audit_tail,
+            pygen_spark_version=pygen_spark_version,
+        )
+
         # Render template with view and UDTFField objects (matching pygen-main's pattern)
         # Note: Views are independent of data models - we use view.as_id() directly in the template
         code = template.render(
@@ -127,6 +141,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
             properties=udtf_fields,  # Pass UDTFField objects (like pygen-main passes Field objects)
             include_analyze=include_analyze,  # Pass include_analyze to template
             use_udtf_decorator=use_udtf_decorator,
+            **audit_ctx,
         )
 
         # Format the generated code using Black (like pygen-main does)

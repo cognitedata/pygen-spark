@@ -13,6 +13,7 @@ from cognite.client.data_classes.data_modeling import DataModelIdentifier
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import SDKGenerator  # type: ignore[import-untyped]
 from cognite.pygen.config import PygenConfig  # type: ignore[import-untyped]
+from cognite.pygen_spark.audit import cdf_audit_http_template_context
 from cognite.pygen_spark.models import (
     UDTFGenerationResult,
     ViewSQLGenerationResult,
@@ -53,13 +54,17 @@ class SparkUDTFGenerator(SDKGenerator):
             data_model: DataModel identifier (DataModelId or DataModel object)
             top_level_package: Top-level Python package name for generated code
             client_name: Name of the client class (required by parent SDKGenerator)
-            **kwargs: Additional arguments passed to parent SDKGenerator
+            **kwargs: Additional arguments passed to parent SDKGenerator. Use
+                ``cdf_audit_deployment_tail`` (default ``GenericSpark``) to set the fourth
+                segment of generated ``x-cdp-app`` (e.g. ``Databricks`` from cognite-databricks).
 
         Raises:
             RuntimeError: If PySpark version is less than 4.0.0
         """
         # Check PySpark version before proceeding
         _check_pyspark_version()
+
+        cdf_audit_deployment_tail = str(kwargs.pop("cdf_audit_deployment_tail", "GenericSpark"))
 
         # Load data model if it's an identifier
         loaded_data_model = self._load_data_model(data_model, client)
@@ -75,6 +80,7 @@ class SparkUDTFGenerator(SDKGenerator):
         # Store client and output_dir for later use
         self.client = client
         self.output_dir = output_dir
+        self._cdf_audit_tail = cdf_audit_deployment_tail
 
         # Create SparkMultiAPIGenerator with correct parameters matching MultiAPIGenerator signature
         # MultiAPIGenerator.__init__ requires:
@@ -121,8 +127,9 @@ class SparkUDTFGenerator(SDKGenerator):
         """Generate UDTF functions for all Views in a Data Model.
 
         Generates two versions of each UDTF:
-        - session_scoped/: With analyze() method (for session-scoped registration)
-        - catalog_registered/: Without analyze() method (for Unity Catalog registration)
+        - session_scoped/: For session-scoped registration (analyze() omitted in code to avoid
+          PySpark Connect circular imports; see ``generate_udtf`` docstring).
+        - catalog_registered/: For Unity Catalog (includes analyze() for UC validation).
 
         Args:
             data_model: Optional DataModel identifier. If None, uses the data model from __init__.
@@ -152,6 +159,8 @@ class SparkUDTFGenerator(SDKGenerator):
                 view,
                 include_analyze=False,  # Disabled to avoid circular import during serialization
                 use_udtf_decorator=False,  # Disabled - will be applied during registration
+                cdf_audit_component="SessionScopedUDTF",
+                cdf_audit_tail=self._cdf_audit_tail,
             )
             file_path_session = self._write_udtf_file(view, udtf_code_session, subdirectory="session_scoped")
             generated_files[f"{view.external_id}_session"] = file_path_session
@@ -161,6 +170,8 @@ class SparkUDTFGenerator(SDKGenerator):
                 view,
                 include_analyze=True,
                 use_udtf_decorator=False,
+                cdf_audit_component="UnityCatalogUDTF",
+                cdf_audit_tail=self._cdf_audit_tail,
             )
             file_path_catalog = self._write_udtf_file(view, udtf_code_catalog, subdirectory="catalog_registered")
             generated_files[f"{view.external_id}_catalog"] = file_path_catalog
@@ -285,7 +296,14 @@ class SparkUDTFGenerator(SDKGenerator):
             # pyspark.sql.connect.udtf during serialization, which triggers a circular
             # import bug in PySpark Connect. Removing them allows registration to work.
             # The decorator will be applied during registration instead.
-            code_session = template.render(include_analyze=False, use_udtf_decorator=False)
+            code_session = template.render(
+                include_analyze=False,
+                use_udtf_decorator=False,
+                **cdf_audit_http_template_context(
+                    audit_component="SessionScopedUDTF",
+                    audit_tail=self._cdf_audit_tail,
+                ),
+            )
             # Format with Black
             try:
                 import black
@@ -301,7 +319,14 @@ class SparkUDTFGenerator(SDKGenerator):
             generated_files[f"{file_name}_session"] = file_path_session
 
             # Generate catalog-registered version (with analyze() for UC validation)
-            code_catalog = template.render(include_analyze=True, use_udtf_decorator=False)
+            code_catalog = template.render(
+                include_analyze=True,
+                use_udtf_decorator=False,
+                **cdf_audit_http_template_context(
+                    audit_component="UnityCatalogUDTF",
+                    audit_tail=self._cdf_audit_tail,
+                ),
+            )
             # Format with Black
             try:
                 import black

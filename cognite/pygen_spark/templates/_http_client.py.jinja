@@ -20,13 +20,17 @@ if TYPE_CHECKING:
 # Token expiry leeway (refresh 30 seconds before expiry)
 _TOKEN_EXPIRY_LEEWAY_SECONDS = 30
 
+# Embedded at codegen (CognitePygenSpark:{ver}:{Component}:{tail} for x-cdp-app, pygen-main-style)
+_CDF_PYGEN_SPARK_VERSION = {{ cdf_ps_version_json }}
+_CDF_X_CDP_APP = {{ cdf_x_cdp_app_json }}
+
 
 def _get_user_agent() -> str:
     """Construct User-Agent string matching Python SDK format.
     
     Format: {sdk_name}/{version} {python_impl}/{python_version} ({build};{compiler}) {os}/{release}-{machine}-{arch}
     """
-    sdk_version = "pygen-spark/0.0.0"  # TODO: Get from package version
+    sdk_version = f"CognitePygenSpark/{_CDF_PYGEN_SPARK_VERSION}"
     python_version = (
         f"{platform.python_implementation()}/{platform.python_version()} "
         f"({platform.python_build()};{platform.python_compiler()})"
@@ -195,7 +199,8 @@ def _make_request(
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
         "Accept": "application/protobuf" if accept_protobuf else "application/json",
-        "x-cdp-app": "pygen-spark",
+        "x-cdp-app": _CDF_X_CDP_APP,
+        "x-cdp-sdk": f"CognitePygenSpark:{_CDF_PYGEN_SPARK_VERSION}",
         "User-Agent": _get_user_agent(),
     }
     if headers:
