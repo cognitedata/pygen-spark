@@ -264,8 +264,9 @@ class SparkUDTFGenerator(SDKGenerator):
         """Generate time series UDTF files using templates.
 
         Generates two versions of each time series UDTF:
-        - session_scoped/: With analyze() method (for session-scoped registration)
-        - catalog_registered/: Without analyze() method (for Unity Catalog registration)
+        - session_scoped/: For session-scoped registration (analyze() omitted in code to avoid
+          PySpark Connect circular imports; see ``generate_udtf`` docstring).
+        - catalog_registered/: For Unity Catalog (includes analyze() for UC validation).
 
         Args:
             output_dir: Optional output directory. If None, uses self.output_dir.
