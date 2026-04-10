@@ -31,6 +31,21 @@ class TestSparkUDTFGenerator:
         assert generator.output_dir == temp_output_dir
         assert generator.client == mock_cognite_client
 
+    def test_cdf_audit_deployment_tail_none_uses_generic_spark(
+        self,
+        mock_cognite_client: object,  # type: ignore[type-arg]
+        temp_output_dir: Path,
+        sample_data_model: dm.DataModel[dm.View],
+    ) -> None:
+        """Explicit cdf_audit_deployment_tail=None must not become the literal string 'None'."""
+        generator = SparkUDTFGenerator(
+            client=mock_cognite_client,  # type: ignore[arg-type]
+            output_dir=temp_output_dir,
+            data_model=sample_data_model,
+            cdf_audit_deployment_tail=None,
+        )
+        assert generator._cdf_audit_tail == "GenericSpark"
+
     def test_generate_udtfs(
         self,
         spark_udtf_generator: SparkUDTFGenerator,

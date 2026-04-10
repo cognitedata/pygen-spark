@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from cognite.client import data_modeling as dm
 
+from cognite.pygen_spark._version import __version__ as pygen_spark_version
 from cognite.pygen_spark.udtf_generator import SparkMultiAPIGenerator
 
 
@@ -23,6 +24,10 @@ class TestTemplateRendering:
         # Check for key UDTF components
         assert "class" in code.lower()
         assert "eval" in code.lower() or "__call__" in code.lower()
+        # pygen-main-style x-cdp-app: CognitePygenSpark:{version}:StandaloneUDTF:GenericSpark (defaults)
+        assert "_CDF_X_CDP_APP" in code
+        assert "x-cdp-sdk" in code
+        assert f"CognitePygenSpark:{pygen_spark_version}:StandaloneUDTF:GenericSpark" in code
 
     def test_udtf_template_includes_view_properties(
         self,
