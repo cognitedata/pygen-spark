@@ -27,10 +27,12 @@ def cdf_audit_http_template_context(
 
     Returns:
         Keys ``cdf_ps_version_json`` and ``cdf_x_cdp_app_json``: JSON-encoded Python literals
-        (safe to emit as ``key = {{ value }}`` in templates).
+        (safe to emit as ``key = {{ value }}`` in templates). Colons in version, component, or
+        tail are replaced with underscores in ``x-cdp-app`` so CDF sees exactly four segments.
     """
     ver = pygen_spark_version if pygen_spark_version is not None else PYGEN_SPARK_PACKAGE_VERSION
-    x_cdp_app = f"CognitePygenSpark:{ver}:{audit_component}:{audit_tail}"
+    s_ver, s_comp, s_tail = (s.replace(":", "_") for s in (ver, audit_component, audit_tail))
+    x_cdp_app = f"CognitePygenSpark:{s_ver}:{s_comp}:{s_tail}"
     return {
         "cdf_ps_version_json": json.dumps(ver),
         "cdf_x_cdp_app_json": json.dumps(x_cdp_app),
