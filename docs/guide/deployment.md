@@ -47,6 +47,32 @@ Most multi-tenant clusters use `{cluster}.cognitedata.com`. Only **`europe-west1
 
 Requires **cognite-pygen ≥ 1.3.0**.
 
+### Example — multi-tenant
+
+```toml
+# config.toml — do not commit secrets
+[cognite]
+project = "your-cdf-project"
+tenant_id = "your-azure-ad-tenant-id"
+cdf_cluster = "westeurope-1"
+client_id = "your-oauth2-client-id"
+client_secret = "your-oauth2-client-secret"
+```
+
+### Example — PSaaS / Private Link
+
+```toml
+[cognite]
+project = "your-cdf-project"
+tenant_id = "your-azure-ad-tenant-id"
+cdf_cluster = "az-xyz-001"
+client_id = "your-oauth2-client-id"
+client_secret = "your-oauth2-client-secret"
+base_url = "https://p001.plink.az-xyz-001.cognitedata.com"
+```
+
+Full examples: [cognite-databricks `example_config.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config.toml), [`example_config_private_link.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config_private_link.toml).
+
 ---
 
 ## 3. TOML-based deployment
