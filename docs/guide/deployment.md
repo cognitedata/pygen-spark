@@ -1,6 +1,6 @@
 # CDF base URL and TOML deployment
 
-How to identify your CDF **base URL**, configure **TOML**, and deploy **cognite-pygen-spark**. Applies to **all** customers.
+How to identify your CDF **base URL**, configure **TOML**, and deploy **cognite-pygen-spark**.
 
 For **Databricks**, see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md) — analysts query **Views** after admin setup.
 
@@ -18,7 +18,7 @@ For **Databricks**, see the [cognite-databricks deployment guide](https://github
 
 ## 1. I need my base URL
 
-Every customer must know the **Cognite API URL** for their cluster before deploying.
+Know the **Cognite API URL** for your cluster before deploying.
 
 | Deployment | Where to find base URL |
 | --- | --- |
@@ -38,7 +38,7 @@ Most multi-tenant clusters use `{cluster}.cognitedata.com`. Only **`europe-west1
 
 ## 2. I need TOML
 
-**All customers** use TOML for admin setup on standalone Spark — connect to CDF and generate UDTFs via `load_cognite_client_from_toml()`.
+Use TOML for admin setup on standalone Spark — connect to CDF and generate UDTFs via `load_cognite_client_from_toml()`.
 
 | Field | Always? | Purpose |
 | --- | --- | --- |
