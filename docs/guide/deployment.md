@@ -2,7 +2,7 @@
 
 How to identify your CDF **base URL**, configure **TOML**, and deploy **cognite-pygen-spark**. Applies to **all** customers.
 
-For **Databricks**, see the [cognite-databricks guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md) — analysts query **Views** after admin setup.
+For **Databricks**, see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md) — analysts query **Views** after admin setup.
 
 ## How this guide fits together
 
@@ -84,7 +84,7 @@ generator = SparkUDTFGenerator(
 result = generator.generate_udtfs()
 ```
 
-See [Registration](./registration.md). For Databricks: [cognite-databricks §3](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md#3-toml-based-deployment).
+See [Registration](./registration.md). For Databricks: [cognite-databricks §3](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md#3-toml-based-deployment).
 
 ---
 
@@ -117,7 +117,7 @@ Networking: [Private Link on Azure](https://docs.cognite.com/cdf/access/guides/c
 
 On **Databricks**, deployment succeeded when you can `SELECT` from **Unity Catalog Views** — not UDTFs, not TOML.
 
-See [Verify deployment (Databricks)](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md#5-verify-deployment-databricks).
+See [Verify deployment (Databricks)](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md#5-verify-deployment-databricks).
 
 ---
 
@@ -151,4 +151,4 @@ pygen generate \
 
 - [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#clusters-and-regions)
 - [Installation](./installation.md)
-- [cognite-databricks guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md)
+- [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md)

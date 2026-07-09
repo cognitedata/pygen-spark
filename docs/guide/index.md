@@ -16,7 +16,7 @@ This approach is ideal for:
 This documentation covers the complete workflow for using pygen-spark:
 
 1. **[Installation](./installation.md)**: Set up dependencies and verify your environment
-2. **[Private Link / PSaaS](./private_link_psaas.md)**: Configure `base_url` for Private Link endpoints
+2. **[Deployment concepts](./deployment.md)**: Base URL and TOML — read first
 3. **[Generation](./generation.md)**: Generate UDTF code from CDF Data Models
 4. **[Registration](./registration.md)**: Register UDTFs in your Spark session
 5. **[Querying](./querying.md)**: Query UDTFs using SQL with credential parameters

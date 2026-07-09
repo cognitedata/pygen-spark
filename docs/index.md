@@ -5,7 +5,7 @@
 ## Start here
 
 - **[User guide overview](./guide/index.md)** — installation through querying
-- **[Private Link / PSaaS](./guide/private_link_psaas.md)** — connect through Private Link endpoints
+- **[Deployment concepts](./guide/deployment.md)** — base URL, TOML, PSaaS details
 
 ## Related packages
 

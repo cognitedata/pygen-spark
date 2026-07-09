@@ -12,7 +12,7 @@ nav:
   - User Guide:
     - Overview: guide/index.md
     - Installation: guide/installation.md
-    - Private Link / PSaaS: guide/private_link_psaas.md
+    - Deployment concepts: guide/deployment.md
     - Generation: guide/generation.md
     - Registration: guide/registration.md
     - Querying: guide/querying.md

@@ -70,7 +70,7 @@ client_id = "<your-client-id>"
 client_secret = "<your-client-secret>"
 ```
 
-**Dedicated / Private Link / PSaaS / `europe-west1-1`:** [§1 base URL](./private_link_psaas.md#1-i-need-my-base-url), [§2 TOML](./private_link_psaas.md#2-i-need-toml). Requires **cognite-pygen** ≥ 1.3.0.
+**Dedicated / Private Link / PSaaS / `europe-west1-1`:** [§1 base URL](./deployment.md#1-i-need-my-base-url), [§2 TOML](./deployment.md#2-i-need-toml). Requires **cognite-pygen** ≥ 1.3.0.
 
 **Security Note**: Keep your `config.toml` file secure and never commit it to version control. Use environment variables or secure configuration management in production.
 
