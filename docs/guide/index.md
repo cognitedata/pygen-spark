@@ -23,7 +23,8 @@ This documentation covers the complete workflow for using pygen-spark:
 6. **[Filtering](./filtering.md)**: Filter data using WHERE clauses with predicate pushdown
 7. **[Joining](./joining.md)**: Join data from different UDTFs based on `external_id` and `space`
 8. **[Time Series](./time_series.md)**: Work with template-generated time series UDTFs (same template-based generation as Data Model UDTFs)
-9. **[Troubleshooting](./troubleshooting.md)**: Common issues and solutions
+9. **[Debug SQL Testing](./debug_sql_testing.md)**: Debug and test generated SQL queries
+10. **[Troubleshooting](./troubleshooting.md)**: Common issues and solutions
 
 ## Generic Spark Utilities
 
