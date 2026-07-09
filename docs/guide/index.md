@@ -16,13 +16,14 @@ This approach is ideal for:
 This documentation covers the complete workflow for using pygen-spark:
 
 1. **[Installation](./installation.md)**: Set up dependencies and verify your environment
-2. **[Generation](./generation.md)**: Generate UDTF code from CDF Data Models
-3. **[Registration](./registration.md)**: Register UDTFs in your Spark session
-4. **[Querying](./querying.md)**: Query UDTFs using SQL with credential parameters
-5. **[Filtering](./filtering.md)**: Filter data using WHERE clauses with predicate pushdown
-6. **[Joining](./joining.md)**: Join data from different UDTFs based on `external_id` and `space`
-7. **[Time Series](./time_series.md)**: Work with template-generated time series UDTFs (same template-based generation as Data Model UDTFs)
-8. **[Troubleshooting](./troubleshooting.md)**: Common issues and solutions
+2. **[Private Link / PSaaS](./private_link_psaas.md)**: Configure `base_url` for Private Link endpoints
+3. **[Generation](./generation.md)**: Generate UDTF code from CDF Data Models
+4. **[Registration](./registration.md)**: Register UDTFs in your Spark session
+5. **[Querying](./querying.md)**: Query UDTFs using SQL with credential parameters
+6. **[Filtering](./filtering.md)**: Filter data using WHERE clauses with predicate pushdown
+7. **[Joining](./joining.md)**: Join data from different UDTFs based on `external_id` and `space`
+8. **[Time Series](./time_series.md)**: Work with template-generated time series UDTFs (same template-based generation as Data Model UDTFs)
+9. **[Troubleshooting](./troubleshooting.md)**: Common issues and solutions
 
 ## Generic Spark Utilities
 
