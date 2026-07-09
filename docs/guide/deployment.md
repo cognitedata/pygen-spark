@@ -71,7 +71,7 @@ client_secret = "your-oauth2-client-secret"
 base_url = "https://p001.plink.az-xyz-001.cognitedata.com"
 ```
 
-Full examples: [cognite-databricks `example_config.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config.toml), [`example_config_private_link.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config_private_link.toml).
+Full examples: cognite-databricks [`example_config.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config.toml), [`example_config_private_link.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config_private_link.toml).
 
 ---
 
