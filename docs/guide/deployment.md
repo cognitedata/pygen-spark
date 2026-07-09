@@ -7,7 +7,7 @@ For Databricks (Unity Catalog, Secret Manager, Views), use the [cognite-databric
 ## Overview
 
 1. **[Find your base URL](#1-i-need-my-base-url)** — cluster row in [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters)
-2. **[Write TOML](#2-i-need-toml)** — `config.toml` with `[cognite]` credentials
+2. **[Write TOML](#2-i-need-toml)** — `[cognite]` credentials; **PSaaS / Private Link:** add `base_url` (`p001.plink.…`)
 3. **[Deploy](#3-toml-based-deployment)** — `load_cognite_client_from_toml()` and generate UDTFs
 4. **[PSaaS / Private Link](#4-what-psaas-base-url-means)** — when Cognite gave you a Private Link hostname
 5. **[Verify on Databricks](#5-verify-on-databricks)** — query Views (Databricks path only)
@@ -37,6 +37,8 @@ Most multi-tenant clusters use `{cluster}.cognitedata.com`. Only **`europe-west1
 ## 2. I need TOML
 
 Use TOML for admin setup on standalone Spark — connect to CDF and generate UDTFs via `load_cognite_client_from_toml()`.
+
+**PSaaS / Private Link:** set `base_url` to the Cognite-provided `p001.plink.<cluster>.cognitedata.com` hostname. See [§4](#4-what-psaas-base-url-means).
 
 | Field | Always? | Purpose |
 | --- | --- | --- |
