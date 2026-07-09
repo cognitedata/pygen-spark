@@ -1,6 +1,6 @@
 # Private Link and PSaaS Setup
 
-This guide explains how to use **cognite-pygen-spark** with CDF **Private Link** or **PSaaS** endpoints.
+This guide explains how to use **cognite-pygen-spark** with CDF **Private Link** or **PSaaS** (Private Software as a Service) endpoints.
 
 For the combined Databricks workflow (Unity Catalog, Secret Manager), see the [cognite-databricks Private Link guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md).
 
