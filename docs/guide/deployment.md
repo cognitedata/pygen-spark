@@ -1,18 +1,16 @@
 # CDF base URL and TOML deployment
 
-How to identify your CDF **base URL**, configure **TOML**, and deploy **cognite-pygen-spark**.
+Identify your CDF **base URL**, write **TOML**, and generate UDTFs with **cognite-pygen-spark**.
 
-For **Databricks**, see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md) — analysts query **Views** after admin setup.
+For **Databricks**, see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md).
 
 ## How this guide fits together
 
-| Step | Your question | Section |
-| --- | --- | --- |
-| 1 | **I need my base URL** | [I need my base URL](#1-i-need-my-base-url) |
-| 2 | **I need TOML** | [I need TOML](#2-i-need-toml) |
-| 3 | **How do I do TOML-based deployment?** | [TOML-based deployment](#3-toml-based-deployment) |
-| 4 | **What does PSaaS base URL mean?** | [What PSaaS base URL means](#4-what-psaas-base-url-means) |
-| 5 | **(Databricks) Did deployment succeed?** | [Verify on Databricks](#5-verify-on-databricks) |
+1. **[I need my base URL](#1-i-need-my-base-url)**
+2. **[I need TOML](#2-i-need-toml)**
+3. **[TOML-based deployment](#3-toml-based-deployment)**
+4. **[What PSaaS base URL means](#4-what-psaas-base-url-means)** — PSaaS / Private Link only
+5. **[Verify on Databricks](#5-verify-on-databricks)** — query Views (Databricks only)
 
 ---
 
