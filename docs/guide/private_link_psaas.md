@@ -30,13 +30,17 @@ Your organization uses **exclusive** resources on a Cognite-managed dedicated cl
 
 ### 3. PSaaS / Private Link
 
-**Private SaaS (PSaaS)** and **Private Link** use endpoints configured in **your customer tenant**, not the shared public cluster URL.
+**Private SaaS (PSaaS)** and **Private Link** use a **Cognite-provided** per-customer hostname that is **wired into your VPN or private network setup**. API traffic reaches CDF through your private connectivity instead of the shared public cluster URL.
+
+Typical hostname format:
+
+`p001.plink.az-xyz-001.cognitedata.com`
 
 | | |
 | --- | --- |
-| **Base URL** | Per-customer URL resolved in your tenant (Private Link: `https://pNNN.plink.{cluster}.cognitedata.com`) |
-| **Who provides it** | Configured in your tenant; Cognite provisions the endpoint |
-| **TOML** | `cdf_cluster` (public cluster name for OAuth) **and** `base_url` |
+| **Base URL** | Cognite-provided Private Link hostname (for example `https://p001.plink.az-xyz-001.cognitedata.com`) |
+| **Who provides it** | Cognite assigns the URL; you integrate it with your VPN / Private Link configuration |
+| **TOML** | `cdf_cluster` (for OAuth) **and** `base_url` (Cognite-provided Private Link URL) |
 
 ### Summary
 
@@ -44,7 +48,7 @@ Your organization uses **exclusive** resources on a Cognite-managed dedicated cl
 | --- | --- | --- | --- |
 | **Multi-tenant** | [Published cluster list](https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters) | Required | Not needed |
 | **Dedicated** | Cognite-provided, customer-specific | Required | Required |
-| **PSaaS / Private Link** | Customer tenant configured | Required | Required |
+| **PSaaS / Private Link** | Cognite-provided; routed via customer VPN | Required | Required |
 
 **cognite-pygen 1.3.0+** supports `base_url` in TOML via `load_cognite_client_from_toml()` for dedicated, PSaaS, and Private Link deployments.
 
@@ -68,16 +72,16 @@ pip install --upgrade "cognite-pygen-spark>=0.3.1" "cognite-pygen>=1.3.0"
 [cognite]
 project = "your-cdf-project"
 tenant_id = "your-azure-ad-tenant-id"
-cdf_cluster = "westeurope-1"
+cdf_cluster = "az-xyz-001"
 client_id = "your-oauth2-client-id"
 client_secret = "your-oauth2-client-secret"
-base_url = "https://p123.plink.westeurope-1.cognitedata.com"
+base_url = "https://p001.plink.az-xyz-001.cognitedata.com"
 ```
 
 | Field | Purpose |
 | --- | --- |
-| `cdf_cluster` | Public cluster name — used for OAuth scopes (`https://{cluster}.cognitedata.com/.default`) |
-| `base_url` | Private Link URL — where API requests are sent |
+| `cdf_cluster` | Cluster name — used for OAuth scopes (`https://{cluster}.cognitedata.com/.default`) |
+| `base_url` | Cognite-provided Private Link URL — routed via your VPN; where API requests are sent |
 
 ## Generate UDTFs (provisioning)
 
@@ -127,7 +131,7 @@ FROM TABLE(
     client_id => '...',
     client_secret => '...',
     tenant_id => '...',
-    cdf_cluster => 'westeurope-1',
+    cdf_cluster => 'az-xyz-001',
     project => 'my-project'
   )
 );
@@ -153,8 +157,8 @@ pygen generate \
   --tenant-id <tenant-id> \
   --client-id <client-id> \
   --client-secret <client-secret> \
-  --cdf-cluster westeurope-1 \
-  --cdf-url https://p123.plink.westeurope-1.cognitedata.com \
+  --cdf-cluster az-xyz-001 \
+  --cdf-url https://p001.plink.az-xyz-001.cognitedata.com \
   --cdf-project my-project
 ```
 
