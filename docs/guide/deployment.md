@@ -1,16 +1,16 @@
 # CDF base URL and TOML deployment
 
-Identify your CDF **base URL**, write **TOML**, and generate UDTFs with **cognite-pygen-spark**.
+Standalone **cognite-pygen-spark** setup: find your API hostname, write TOML, generate UDTFs.
 
-For **Databricks**, see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md).
+For Databricks (Unity Catalog, Secret Manager, Views), use the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md).
 
-## How this guide fits together
+## Overview
 
-1. **[I need my base URL](#1-i-need-my-base-url)**
-2. **[I need TOML](#2-i-need-toml)**
-3. **[TOML-based deployment](#3-toml-based-deployment)**
-4. **[What PSaaS base URL means](#4-what-psaas-base-url-means)** — PSaaS / Private Link only
-5. **[Verify on Databricks](#5-verify-on-databricks)** — query Views (Databricks only)
+1. **[Find your base URL](#1-i-need-my-base-url)** — cluster row in [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters)
+2. **[Write TOML](#2-i-need-toml)** — `config.toml` with `[cognite]` credentials
+3. **[Deploy](#3-toml-based-deployment)** — `load_cognite_client_from_toml()` and generate UDTFs
+4. **[PSaaS / Private Link](#4-what-psaas-base-url-means)** — when Cognite gave you a Private Link hostname
+5. **[Verify on Databricks](#5-verify-on-databricks)** — query Views (Databricks path only)
 
 ---
 
