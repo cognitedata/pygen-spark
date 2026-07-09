@@ -56,6 +56,76 @@ Typical hostname format:
 
 Multi-tenant customers only need `cdf_cluster` — see [Installation](./installation.md) and [Generation](./generation.md).
 
+## Deploying with a TOML file
+
+On standalone Spark clusters, the TOML file is used during **admin setup** to connect to CDF and generate UDTF code. Unlike Databricks, there is no Secret Manager — credentials from TOML are passed into SQL manually (or via your own secret store) when querying.
+
+| Phase | Uses TOML? | What happens |
+| --- | --- | --- |
+| **1. Prepare config** | Create file | Store `[cognite]` credentials (+ `base_url` for PSaaS/Private Link) on the driver |
+| **2. Install** | No | `pip install cognite-pygen-spark` and `cognite-pygen>=1.3.0` |
+| **3. Connect + generate** | **Yes** | `load_cognite_client_from_toml()` → `SparkUDTFGenerator.generate_udtfs()` |
+| **4. Register** | No | Import and register generated UDTF classes in the Spark session |
+| **5. Query** | Optional | Pass credential values in SQL; read from TOML in notebook or use env vars |
+
+For the full Databricks flow (TOML → Secret Manager → Unity Catalog), see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md#deploying-with-a-toml-file).
+
+### Step-by-step (pygen-spark)
+
+**Step 1 — Install** (driver and all workers need `cognite-sdk`):
+
+```bash
+pip install --upgrade "cognite-pygen-spark>=0.3.1" "cognite-pygen>=1.3.0"
+```
+
+**Step 2 — Create `config.toml`** with `base_url` for PSaaS / Private Link (see [TOML configuration](#toml-configuration) below).
+
+**Step 3 — Generate UDTFs from TOML:**
+
+```python
+from pathlib import Path
+
+from cognite.client.data_classes.data_modeling.ids import DataModelId
+from cognite.pygen import load_cognite_client_from_toml
+from cognite.pygen_spark import SparkUDTFGenerator
+
+client = load_cognite_client_from_toml("config.toml")
+client.iam.token.inspect()
+
+generator = SparkUDTFGenerator(
+    client=client,
+    output_dir=Path("./generated_udtfs"),
+    data_model=DataModelId(space="my_space", external_id="MyModel", version="1"),
+    top_level_package="cognite_udtfs",
+)
+result = generator.generate_udtfs()
+```
+
+**Step 4 — Register** generated UDTFs in your Spark session ([Registration](./registration.md)).
+
+**Step 5 — Query** with credentials as SQL parameters. Read values from TOML in your notebook if needed:
+
+```python
+import toml
+
+config = toml.load("config.toml")["cognite"]
+```
+
+```sql
+SELECT *
+FROM TABLE(
+  my_view_udtf(
+    client_id => '...',
+    client_secret => '...',
+    tenant_id => '...',
+    cdf_cluster => 'az-xyz-001',
+    project => 'my-project'
+  )
+);
+```
+
+`base_url` from TOML is applied only during **generation** (step 3), not at query time.
+
 ## Requirements
 
 - **cognite-pygen** ≥ 1.3.0
@@ -82,60 +152,6 @@ base_url = "https://p001.plink.az-xyz-001.cognitedata.com"
 | --- | --- |
 | `cdf_cluster` | Cluster name — used for OAuth scopes (`https://{cluster}.cognitedata.com/.default`) |
 | `base_url` | Cognite-provided Private Link URL — routed via your VPN; where API requests are sent |
-
-## Generate UDTFs (provisioning)
-
-Use `load_cognite_client_from_toml()` so `base_url` is applied automatically:
-
-```python
-from pathlib import Path
-
-from cognite.client.data_classes.data_modeling.ids import DataModelId
-from cognite.pygen import load_cognite_client_from_toml
-from cognite.pygen_spark import SparkUDTFGenerator
-
-client = load_cognite_client_from_toml("config.toml")
-
-generator = SparkUDTFGenerator(
-    client=client,
-    output_dir=Path("./generated_udtfs"),
-    data_model=DataModelId(space="my_space", external_id="MyModel", version="1"),
-    top_level_package="cognite_udtfs",
-)
-result = generator.generate_udtfs()
-```
-
-Verify connectivity before generating:
-
-```python
-client.iam.token.inspect()
-```
-
-## Session registration and querying
-
-When registering UDTFs in a Spark session, pass credentials as usual. Generated UDTFs resolve API URLs from the `cdf_cluster` parameter using the public URL pattern (`https://{cdf_cluster}.cognitedata.com`).
-
-| Phase | Private Link via `base_url` |
-| --- | --- |
-| Code generation (`load_cognite_client_from_toml`) | Supported |
-| UDTF query time (`cdf_cluster` SQL parameter) | Public URL pattern only |
-
-For Private Link-only networks at query time, ensure workers can reach the endpoint UDTFs use, or coordinate with Cognite on runtime `base_url` support.
-
-Example query (public URL resolution at runtime):
-
-```sql
-SELECT *
-FROM TABLE(
-  my_view_udtf(
-    client_id => '...',
-    client_secret => '...',
-    tenant_id => '...',
-    cdf_cluster => 'az-xyz-001',
-    project => 'my-project'
-  )
-);
-```
 
 ## `CDFConnectionConfig` vs `load_cognite_client_from_toml`
 
