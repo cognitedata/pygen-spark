@@ -1,0 +1,29 @@
+site_name: pygen-spark Docs
+docs_dir: docs
+use_directory_urls: false
+theme:
+  name: material
+  features:
+    - content.code.copy
+    - content.tooltips
+
+nav:
+  - Home: index.md
+  - User Guide:
+    - Overview: guide/index.md
+    - Installation: guide/installation.md
+    - Deployment concepts: guide/deployment.md
+    - Generation: guide/generation.md
+    - Registration: guide/registration.md
+    - Querying: guide/querying.md
+    - Filtering: guide/filtering.md
+    - Joining: guide/joining.md
+    - Time Series: guide/time_series.md
+    - Debug SQL Testing: guide/debug_sql_testing.md
+    - Troubleshooting: guide/troubleshooting.md
+
+markdown_extensions:
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - tables
+  - admonition
