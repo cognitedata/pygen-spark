@@ -1,30 +1,56 @@
 # Private Link and PSaaS Setup
 
-This guide explains how to use **cognite-pygen-spark** with CDF **Private Link** or **PSaaS** (Private Software as a Service) when your tenant uses a dedicated base URL instead of the standard public cluster hostname.
+This guide explains CDF **base URL** configuration for **cognite-pygen-spark**, with setup details for deployments that require a custom `base_url` in TOML.
 
 For the combined Databricks workflow (Unity Catalog, Secret Manager), see the [cognite-databricks Private Link guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/private_link_psaas.md).
 
-## CDF base URL (standard)
+## CDF base URL
 
-For standard multi-tenant CDF deployments, the API **base URL** is determined by your cluster and region. See [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#clusters-and-regions) for available clusters, cloud providers, and regions.
+How you connect to CDF depends on your deployment type. See [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#clusters-and-regions).
 
-Typically:
+### 1. Multi-tenant cluster
 
-- Set **`cdf_cluster`** to your cluster name (for example `westeurope-1`).
-- The SDK derives `https://{cdf_cluster}.cognitedata.com` automatically.
-- No `base_url` field is needed in TOML.
+Your organization runs on a **shared** Cognite cluster. Choose from the [published multi-tenant list](https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters).
 
-## Private SaaS and Private Link
+| | |
+| --- | --- |
+| **Base URL** | Listed in the Clusters and regions table |
+| **Who provides it** | Cognite — fixed per cluster from the public list |
+| **TOML** | `cdf_cluster` only — no `base_url` |
 
-For **Private SaaS (PSaaS)** and **Private Link**, Cognite assigns a **per-customer base URL** provisioned in **your customer tenant** instead of the shared public cluster URL. Your Cognite representative provides this hostname; it is resolved within your private network or dedicated environment.
+### 2. Dedicated cluster
 
-| Deployment | Base URL | Notes |
-| --- | --- | --- |
-| **Standard multi-tenant** | `https://{cdf_cluster}.cognitedata.com` | See [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#clusters-and-regions) |
-| **Private Link** | `https://pNNN.plink.{cdf_cluster}.cognitedata.com` | Per-customer; resolved in your tenant |
-| **Private SaaS (PSaaS)** | Customer-specific hostname | Per-customer; resolved in your tenant |
+Your organization uses **exclusive** resources on a Cognite-managed dedicated cluster (contact your Cognite representative).
 
-Keep **`cdf_cluster`** as the public cluster name for OAuth scopes. Add **`base_url`** in TOML with your tenant-specific URL for API traffic. **cognite-pygen 1.3.0+** supports this via `load_cognite_client_from_toml()`.
+| | |
+| --- | --- |
+| **Base URL** | Customer-specific hostname **provided by Cognite** |
+| **Who provides it** | Cognite — assigned to your organization |
+| **TOML** | `cdf_cluster` **and** `base_url` |
+
+### 3. PSaaS / Private Link
+
+**Private SaaS (PSaaS)** and **Private Link** use endpoints configured in **your customer tenant**, not the shared public cluster URL.
+
+| | |
+| --- | --- |
+| **Base URL** | Per-customer URL resolved in your tenant (Private Link: `https://pNNN.plink.{cluster}.cognitedata.com`) |
+| **Who provides it** | Configured in your tenant; Cognite provisions the endpoint |
+| **TOML** | `cdf_cluster` (public cluster name for OAuth) **and** `base_url` |
+
+### Summary
+
+| Deployment | Base URL source | `cdf_cluster` | `base_url` |
+| --- | --- | --- | --- |
+| **Multi-tenant** | [Published cluster list](https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters) | Required | Not needed |
+| **Dedicated** | Cognite-provided, customer-specific | Required | Required |
+| **PSaaS / Private Link** | Customer tenant configured | Required | Required |
+
+**cognite-pygen 1.3.0+** supports `base_url` in TOML via `load_cognite_client_from_toml()` for dedicated, PSaaS, and Private Link deployments.
+
+## When you need this guide
+
+Multi-tenant customers only need `cdf_cluster` — see [Installation](./installation.md) and [Generation](./generation.md).
 
 ## Requirements
 

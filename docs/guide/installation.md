@@ -65,12 +65,12 @@ Create a TOML configuration file (`config.toml`) with your CDF credentials:
 [cognite]
 project = "<your-cdf-project>"
 tenant_id = "<your-tenant-id>"
-cdf_cluster = "<your-cdf-cluster>"  # See https://docs.cognite.com/cdf/admin/clusters_regions#clusters-and-regions
+cdf_cluster = "<your-cdf-cluster>"  # Multi-tenant: see https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters
 client_id = "<your-client-id>"
 client_secret = "<your-client-secret>"
 ```
 
-**Private Link / PSaaS:** Cognite provisions a per-customer `base_url` in your tenant. Requires **cognite-pygen** ≥ 1.3.0. See [Private Link setup](./private_link_psaas.md).
+**Dedicated / Private Link / PSaaS:** also set `base_url` in TOML (requires **cognite-pygen** ≥ 1.3.0). See [CDF base URL types](./private_link_psaas.md#cdf-base-url).
 
 **Security Note**: Keep your `config.toml` file secure and never commit it to version control. Use environment variables or secure configuration management in production.
 
