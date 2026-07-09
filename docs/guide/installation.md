@@ -70,7 +70,7 @@ client_id = "<your-client-id>"
 client_secret = "<your-client-secret>"
 ```
 
-**Dedicated / Private Link / PSaaS:** also set `base_url` with the Cognite-provided hostname (wired via your VPN for PSaaS/Private Link). Requires **cognite-pygen** ≥ 1.3.0. See [CDF base URL types](./private_link_psaas.md#cdf-base-url).
+**Dedicated / Private Link / PSaaS:** not on the default base URL — [§3 base URL types](./private_link_psaas.md#3-what-base-url-means--three-types), [§4 TOML deployment](./private_link_psaas.md#4-toml-based-deployment). Requires **cognite-pygen** ≥ 1.3.0.
 
 **Security Note**: Keep your `config.toml` file secure and never commit it to version control. Use environment variables or secure configuration management in production.
 
