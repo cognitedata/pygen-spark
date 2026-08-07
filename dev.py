@@ -100,9 +100,7 @@ def _read_last_commit_message() -> tuple[str, str | None]:
         return after_bump, None
 
     bump_text, changelog_text = after_bump.split("## Changelog", maxsplit=1)
-
-    if changelog_text is not None:
-        changelog_text = _sanitize_changelog_text(changelog_text)
+    changelog_text = _sanitize_changelog_text(changelog_text)
 
     return bump_text, changelog_text
 
@@ -117,9 +115,9 @@ def _sanitize_changelog_text(changelog_text: str) -> str:
     changelog_text = changelog_text.split("-----")[0].strip()
     kept: list[str] = []
     for line in changelog_text.splitlines():
-        stripped = line.strip()
-        if stripped.startswith("## "):
+        if line.startswith("## "):
             break
+        stripped = line.strip()
         if stripped.casefold().startswith("made with ["):
             break
         kept.append(line)
