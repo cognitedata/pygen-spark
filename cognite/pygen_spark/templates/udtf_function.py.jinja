@@ -479,7 +479,48 @@ class {{ view.external_id }}UDTF:
             ]
             view_key = "{{ view.external_id }}/{{ view.version }}"
             space_name = "{{ view.space }}"
-            
+
+            def _resolve_view_properties(item: dict) -> dict:
+                """Resolve this instance's property dict for the view exactly once.
+
+                Wide views (many columns) previously re-walked the nested
+                ``sources`` / ``properties`` structure once per column, which is
+                O(columns x depth) per row. Resolving the dict once makes property
+                lookup O(depth + columns). Values from ``sources`` take precedence
+                over ``properties`` (matching prior per-column fallback behavior).
+                """
+                resolved: dict[str, object] = {}
+                properties_dict = item.get("properties")
+                if isinstance(properties_dict, dict):
+                    space_data = properties_dict.get(space_name)
+                    if isinstance(space_data, dict):
+                        view_data = space_data.get(view_key)
+                        if isinstance(view_data, dict):
+                            resolved.update(view_data)
+                    if not resolved:
+                        for space_data in properties_dict.values():
+                            if isinstance(space_data, dict):
+                                view_data = space_data.get(view_key)
+                                if isinstance(view_data, dict):
+                                    resolved.update(view_data)
+                                    break
+                sources = item.get("sources")
+                if isinstance(sources, dict):
+                    view_data = sources.get(view_key)
+                    if isinstance(view_data, dict):
+                        for key, value in view_data.items():
+                            if value is not None:
+                                resolved[key] = value
+                return resolved
+
+            # Adaptive page size: scale the API ``limit`` down as the number of view
+            # columns grows so a single page's payload/parse cost stays bounded and
+            # does not OOM workers on very wide views. Computed at codegen from a fixed
+            # per-page cell budget: min(1000, max(25, budget // num_columns)).
+            # This view has {{ (properties | length) }} column(s).
+{% set _num_columns = (properties | length) or 1 %}
+            page_limit = {{ [1000, [25, (50000 // _num_columns)] | max] | min }}
+
             # Pagination: iterate through all pages using nextCursor
             next_cursor: str | None = None
             while True:
@@ -496,7 +537,7 @@ class {{ view.external_id }}UDTF:
                         }
                     ],
                     "instanceType": "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
-                    "limit": 1000,
+                    "limit": page_limit,
                     "includeTyping": False,
                 }
                 if filter_json:
@@ -517,56 +558,37 @@ class {{ view.external_id }}UDTF:
                 # Process items from this page
                 for item in items:
                     row_values: list[object] = []
-                    
+
+                    # Resolve this instance's view properties once (not per column)
+                    view_properties = _resolve_view_properties(item)
+
                     for prop in properties_list:
                         prop_name = prop["name"]
-                        prop_value = None
-                        sources = item.get("sources", {})
-                        if isinstance(sources, dict) and view_key in sources:
-                            view_data = sources[view_key]
-                            if isinstance(view_data, dict):
-                                prop_value = view_data.get(prop_name)
-                        if prop_value is None:
-                            properties_dict = item.get("properties", {})
-                            if isinstance(properties_dict, dict):
-                                if space_name in properties_dict:
-                                    space_data = properties_dict[space_name]
-                                    if isinstance(space_data, dict) and view_key in space_data:
-                                        view_data = space_data[view_key]
-                                        if isinstance(view_data, dict):
-                                            prop_value = view_data.get(prop_name)
-                                if prop_value is None:
-                                    for space_key in properties_dict:
-                                        space_data = properties_dict[space_key]
-                                        if isinstance(space_data, dict) and view_key in space_data:
-                                            view_data = space_data[view_key]
-                                            if isinstance(view_data, dict):
-                                                prop_value = view_data.get(prop_name)
-                                                if prop_value is not None:
-                                                    break
+                        prop_value = view_properties.get(prop_name)
                         # Fallback: check top-level of item for properties that might be there
                         # (some API responses may have properties at top level, like tags, aliases)
                         # This is critical for instance-level metadata like tags, aliases, etc.
                         if prop_value is None and prop_name in item:
                             prop_value = item.get(prop_name)
-                        
+
                         # Normalize the value (value_kind from PySpark DataType at codegen)
                         normalized_value = _normalize_value(prop_value, prop["value_kind"])
-                        
+
                         row_values.append(normalized_value)
-                    
+
                     row_values.append(item.get("space", None))
                     row_values.append(item.get("externalId") or item.get("external_id", None))
-                    
+
                     # Instance metadata timestamps (same conversion as TimestampType view properties)
                     row_values.append(_cdf_timestamp_value_to_datetime(item.get("createdTime")))
                     row_values.append(_cdf_timestamp_value_to_datetime(item.get("lastUpdatedTime")))
                     row_values.append(_cdf_timestamp_value_to_datetime(item.get("deletedTime")))
-                    
+
                     yield tuple(row_values)
-                
-                # Check for next page
+
+                # Check for next page, then release this page's memory before fetching more
                 next_cursor = response_data.get("nextCursor")
+                del response, response_data, items
                 if next_cursor is None:
                     break
             
