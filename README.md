@@ -2,7 +2,7 @@
 
 A code generation library that extends [pygen](https://github.com/cognitedata/pygen) to generate Python User-Defined Table Functions (UDTFs) for CDF Data Models, enabling you to query CDF data directly from Spark SQL.
 
-**Latest Release:** Version 0.2.0 includes improved error handling, direct REST API calls, and enhanced time series UDTF support. Version 0.2.1 fixes protobuf parsing for detailed time series UDTFs. Version 0.2.2 adds SQL-native time series UDTF template with predicate pushdown support. Version 0.2.3 improves handling of CDF view properties whose names clash with Python reserved words.
+**Latest Release:** Version 0.3.2 reduces memory usage in generated view UDTFs for wide views (adaptive API page size, single-pass property resolution, and page memory cleanup). Version 0.3.1 updates security-related dependencies. Version 0.3.0 adds CDF audit headers to generated UDTF HTTP clients. Earlier releases: 0.2.x improved error handling, time series UDTFs, and reserved-word property names.
 
 Full release notes are published on [GitHub Releases](https://github.com/cognitedata/pygen-spark/releases). Patch releases may update locked dependencies and minimum constraints without API changes.
 
