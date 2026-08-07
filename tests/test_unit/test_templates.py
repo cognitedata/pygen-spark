@@ -152,6 +152,18 @@ class TestTemplateRendering:
         assert "view_properties = _resolve_view_properties(item)" in code
         assert "prop_value = view_properties.get(prop_name)" in code
 
+    def test_udtf_resolves_sources_list_format_from_cdf_api(
+        self,
+        spark_multi_api_generator: SparkMultiAPIGenerator,
+        sample_view: dm.View,
+    ) -> None:
+        """CDF v3 list responses expose sources as a list of {source, properties} objects."""
+        code = spark_multi_api_generator.generate_udtf(sample_view, include_analyze=True, use_udtf_decorator=False)
+        assert "if isinstance(sources, list):" in code
+        assert 'source_item.get("properties")' in code
+        assert 'source_ref.get("externalId") or source_ref.get("external_id")' in code
+        assert "elif isinstance(sources, dict):" in code
+
     def test_udtf_releases_page_memory_between_pages(
         self,
         spark_multi_api_generator: SparkMultiAPIGenerator,

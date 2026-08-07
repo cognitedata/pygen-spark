@@ -505,7 +505,26 @@ class {{ view.external_id }}UDTF:
                                     resolved.update(view_data)
                                     break
                 sources = item.get("sources")
-                if isinstance(sources, dict):
+                if isinstance(sources, list):
+                    # CDF v3 API: sources is a list of {source, properties} objects
+                    # (see NodeOrEdgeData in cognite-sdk-python).
+                    for source_item in sources:
+                        if not isinstance(source_item, dict):
+                            continue
+                        source_ref = source_item.get("source", {})
+                        if not isinstance(source_ref, dict):
+                            continue
+                        s_space = source_ref.get("space")
+                        s_ext_id = source_ref.get("externalId") or source_ref.get("external_id")
+                        s_ver = source_ref.get("version")
+                        if s_space == space_name and f"{s_ext_id}/{s_ver}" == view_key:
+                            view_data = source_item.get("properties")
+                            if isinstance(view_data, dict):
+                                for key, value in view_data.items():
+                                    if value is not None:
+                                        resolved[key] = value
+                elif isinstance(sources, dict):
+                    # Legacy / test mock format: sources keyed by view_key.
                     view_data = sources.get(view_key)
                     if isinstance(view_data, dict):
                         for key, value in view_data.items():
