@@ -19,7 +19,7 @@ def _view_with_property_count(num_props: int) -> dm.View:
         last_updated_time=2,
         name="",
         description="",
-        properties={f"prop{i}": dm.Text() for i in range(num_props)},  # type: ignore[dict-item]
+        properties={f"prop{i}": dm.Text() for i in range(num_props)},  # type: ignore[dict-item, misc]
         filter=None,
         implements=None,
         writable=False,
