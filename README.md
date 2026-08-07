@@ -4,7 +4,7 @@ A code generation library that extends [pygen](https://github.com/cognitedata/py
 
 **Latest Release:** Version 0.3.2 reduces memory usage in generated view UDTFs for wide views (adaptive API page size, single-pass property resolution, and page memory cleanup). Version 0.3.1 updates security-related dependencies. Version 0.3.0 adds CDF audit headers to generated UDTF HTTP clients. Earlier releases: 0.2.x improved error handling, time series UDTFs, and reserved-word property names.
 
-Full release notes are published on [GitHub Releases](https://github.com/cognitedata/pygen-spark/releases). Patch releases may update locked dependencies and minimum constraints without API changes.
+Full release notes are published on [GitHub Releases](https://github.com/cognitedata/pygen-spark/releases). Patch releases may update locked dependencies and minimum constraints without API changes. **Release PRs must be merged with a merge commit** (not squash) so the `## Bump` and `## Changelog` sections from the PR description are included in the commit message for `dev.py`.
 
 **Note:** This document uses PyPI package names for references:
 - **PyPI:** `cognite-pygen` (repository: `pygen`)
