@@ -99,13 +99,29 @@ def _read_last_commit_message() -> tuple[str, str | None]:
     if "## Changelog" not in after_bump:
         return after_bump, None
 
-    bump_text, changelog_text = after_bump.split("## Changelog")
-
-    if "-----" in changelog_text:
-        # Co-authors section
-        changelog_text = changelog_text.split("-----")[0].strip()
+    bump_text, changelog_text = after_bump.split("## Changelog", maxsplit=1)
+    changelog_text = _sanitize_changelog_text(changelog_text)
 
     return bump_text, changelog_text
+
+
+def _sanitize_changelog_text(changelog_text: str) -> str:
+    """Strip merge-commit noise from the changelog section before validation.
+
+    GitHub merge messages may append PR footers (e.g. ``Made with [Cursor]``) or extra
+    sections (e.g. ``## Test plan``) after the changelog lists. Only ``###`` headers and
+    bullet lists are valid changelog content.
+    """
+    changelog_text = changelog_text.split("-----")[0].strip()
+    kept: list[str] = []
+    for line in changelog_text.splitlines():
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.casefold().startswith("made with ["):
+            break
+        kept.append(line)
+    return "\n".join(kept).strip()
 
 
 def _validate_changelog_entry(changelog_text: str) -> None:
