@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -14,7 +15,7 @@ CHANGELOG_ENTRY_FILE = REPO_ROOT / "last_changelog_entry.md"
 
 
 @pytest.fixture(autouse=True)
-def _restore_last_git_message_file() -> None:
+def _restore_last_git_message_file() -> Generator[None, None, None]:
     """Restore last_git_message.txt if a test overwrites it."""
     original = LAST_GIT_MESSAGE_FILE.read_text() if LAST_GIT_MESSAGE_FILE.exists() else None
     yield
