@@ -1,24 +1,22 @@
 # CDF base URL and TOML deployment
 
-How to identify your CDF **base URL**, configure **TOML**, and deploy **cognite-pygen-spark**. Applies to **all** customers.
+Standalone **cognite-pygen-spark** setup: find your API hostname, write TOML, generate UDTFs.
 
-For **Databricks**, see the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md) — analysts query **Views** after admin setup.
+For Databricks (Unity Catalog, Secret Manager, Views), use the [cognite-databricks deployment guide](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/deployment.md).
 
-## How this guide fits together
+## Overview
 
-| Step | Your question | Section |
-| --- | --- | --- |
-| 1 | **I need my base URL** | [I need my base URL](#1-i-need-my-base-url) |
-| 2 | **I need TOML** | [I need TOML](#2-i-need-toml) |
-| 3 | **How do I do TOML-based deployment?** | [TOML-based deployment](#3-toml-based-deployment) |
-| 4 | **What does PSaaS base URL mean?** | [What PSaaS base URL means](#4-what-psaas-base-url-means) |
-| 5 | **(Databricks) Did deployment succeed?** | [Verify on Databricks](#5-verify-on-databricks) |
+1. **[Find your base URL](#1-i-need-my-base-url)** — cluster row in [Clusters and regions](https://docs.cognite.com/cdf/admin/clusters_regions#cognite-multi-tenant-clusters)
+2. **[Write TOML](#2-i-need-toml)** — `[cognite]` credentials; **PSaaS / Private Link:** add `base_url` (`p001.plink.…`)
+3. **[Deploy](#3-toml-based-deployment)** — `load_cognite_client_from_toml()` and generate UDTFs
+4. **[PSaaS / Private Link](#4-what-psaas-base-url-means)** — when Cognite gave you a Private Link hostname
+5. **[Verify on Databricks](#5-verify-on-databricks)** — query Views (Databricks path only)
 
 ---
 
 ## 1. I need my base URL
 
-Every customer must know the **Cognite API URL** for their cluster before deploying.
+Know the **Cognite API URL** for your cluster before deploying.
 
 | Deployment | Where to find base URL |
 | --- | --- |
@@ -38,7 +36,9 @@ Most multi-tenant clusters use `{cluster}.cognitedata.com`. Only **`europe-west1
 
 ## 2. I need TOML
 
-**All customers** use TOML for admin setup on standalone Spark — connect to CDF and generate UDTFs via `load_cognite_client_from_toml()`.
+Use TOML for admin setup on standalone Spark — connect to CDF and generate UDTFs via `load_cognite_client_from_toml()`.
+
+**PSaaS / Private Link:** set `base_url` to the Cognite-provided `p001.plink.<cluster>.cognitedata.com` hostname. See [§4](#4-what-psaas-base-url-means).
 
 | Field | Always? | Purpose |
 | --- | --- | --- |
@@ -46,6 +46,32 @@ Most multi-tenant clusters use `{cluster}.cognitedata.com`. Only **`europe-west1
 | `base_url` | When [§1](#1-i-need-my-base-url) requires it | API hostname override |
 
 Requires **cognite-pygen ≥ 1.3.0**.
+
+### Example — multi-tenant
+
+```toml
+# config.toml — do not commit secrets
+[cognite]
+project = "your-cdf-project"
+tenant_id = "your-azure-ad-tenant-id"
+cdf_cluster = "westeurope-1"
+client_id = "your-oauth2-client-id"
+client_secret = "your-oauth2-client-secret"
+```
+
+### Example — PSaaS / Private Link
+
+```toml
+[cognite]
+project = "your-cdf-project"
+tenant_id = "your-azure-ad-tenant-id"
+cdf_cluster = "az-xyz-001"
+client_id = "your-oauth2-client-id"
+client_secret = "your-oauth2-client-secret"
+base_url = "https://p001.plink.az-xyz-001.cognitedata.com"
+```
+
+Full examples: cognite-databricks [`example_config.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config.toml), [`example_config_private_link.toml`](https://github.com/cognitedata/cognite-databricks/blob/main/docs/catalog_based/example_config_private_link.toml).
 
 ---
 
