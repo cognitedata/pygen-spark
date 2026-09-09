@@ -1,5 +1,6 @@
 """This is a small CLI used for pygen-spark development."""
 
+import re
 from pathlib import Path
 from typing import Literal, get_args
 
@@ -83,6 +84,10 @@ def create_changelog_entry() -> None:
     print(f"Changelog entry written to {CHANGELOG_ENTRY_FILE}.")
 
 
+_BUMP_SECTION_RE = re.compile(r"^## Bump\s*$", re.MULTILINE)
+_CHANGELOG_SECTION_RE = re.compile(r"^## Changelog\s*$", re.MULTILINE)
+
+
 def _read_last_commit_message() -> tuple[str, str | None]:
     """Read and parse the last commit message."""
     last_git_message = LAST_GIT_MESSAGE_FILE.read_text()
@@ -91,21 +96,39 @@ def _read_last_commit_message() -> tuple[str, str | None]:
         bump_text = "- [ ] Patch\n- [ ] Minor\n- [x] Skip\n"
         return bump_text, None
 
-    if "## Bump" not in last_git_message:
+    bump_match = _BUMP_SECTION_RE.search(last_git_message)
+    if bump_match is None:
         print("No bump entry found in the last commit message.")
         raise SystemExit(1)
 
-    after_bump = last_git_message.split("## Bump")[1].strip()
-    if "## Changelog" not in after_bump:
-        return after_bump, None
+    after_bump = last_git_message[bump_match.end() :].lstrip("\n")
+    changelog_match = _CHANGELOG_SECTION_RE.search(after_bump)
+    if changelog_match is None:
+        return after_bump.strip(), None
 
-    bump_text, changelog_text = after_bump.split("## Changelog")
-
-    if "-----" in changelog_text:
-        # Co-authors section
-        changelog_text = changelog_text.split("-----")[0].strip()
+    bump_text = after_bump[: changelog_match.start()].strip()
+    changelog_text = _sanitize_changelog_text(after_bump[changelog_match.end() :].lstrip("\n"))
 
     return bump_text, changelog_text
+
+
+def _sanitize_changelog_text(changelog_text: str) -> str:
+    """Strip merge-commit noise from the changelog section before validation.
+
+    GitHub merge messages may append PR footers (e.g. ``Made with [Cursor]``) or extra
+    sections (e.g. ``## Test plan``) after the changelog lists. Only ``###`` headers and
+    bullet lists are valid changelog content.
+    """
+    changelog_text = changelog_text.split("-----")[0].strip()
+    kept: list[str] = []
+    for line in changelog_text.splitlines():
+        if line.startswith("## "):
+            break
+        stripped = line.strip()
+        if stripped.casefold().startswith("made with ["):
+            break
+        kept.append(line)
+    return "\n".join(kept).strip()
 
 
 def _validate_changelog_entry(changelog_text: str) -> None:
