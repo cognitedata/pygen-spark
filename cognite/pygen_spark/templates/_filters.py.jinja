@@ -1,0 +1,149 @@
+{# Inline FilterDefinition builder for generated UDTFs (mirrors cognite.pygen_spark.filters). #}
+    def _build_filter_json(
+        self,
+        filters: dict[str, object],
+        *,
+        exists_properties: list[str] | None = None,
+        not_exists_properties: list[str] | None = None,
+        instance_space: object | None = None,
+        external_id_filter: object | None = None,
+        gt: dict[str, object] | None = None,
+        gte: dict[str, object] | None = None,
+        lt: dict[str, object] | None = None,
+        lte: dict[str, object] | None = None,
+    ) -> dict | None:
+        """Build CDF API filter JSON from input parameters.
+
+        Replicates SDK FilterDefinition serialization (equals/in/containsAny/exists/range/identity).
+
+        Args:
+            filters: Dictionary of view-property equality / in / containsAny conditions
+            exists_properties: View property names for IS NOT NULL (exists)
+            not_exists_properties: View property names for IS NULL (not exists)
+            instance_space: Instance identity space equals or list (in)
+            external_id_filter: Instance identity externalId equals or list (in)
+            gt/gte/lt/lte: Range maps of view property -> value
+
+        Returns:
+            CDF API filter JSON dict or None if no filters
+        """
+        import json
+        from datetime import datetime, timezone
+
+        property_is_array: dict[str, bool] = {
+{% for prop in properties %}
+            "{{ prop.prop_name }}": {{ prop.is_array }},
+{% endfor %}
+        }
+        instance_type = "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}"
+        view_space = "{{ view.space | escape_python_literal }}"
+        view_key = "{{ (view.external_id + '/' + view.version) | escape_python_literal }}"
+
+        def _coerce_filter_value(value: object) -> object:
+            """Normalize filter values to SDK-like shapes (supports JSON list strings and datetime objects)."""
+            if hasattr(value, 'timestamp') or hasattr(value, 'isoformat'):
+                try:
+                    dt = value
+                    if hasattr(dt, 'tzinfo'):
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        else:
+                            dt = dt.astimezone(timezone.utc)
+                    if hasattr(dt, 'isoformat'):
+                        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                    else:
+                        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+                except (AttributeError, TypeError):
+                    pass
+
+            if hasattr(value, 'year') and hasattr(value, 'month') and hasattr(value, 'day'):
+                try:
+                    if hasattr(value, 'hour'):
+                        dt = datetime(
+                            value.year, value.month, value.day,
+                            value.hour, value.minute, value.second,
+                            getattr(value, 'microsecond', 0)
+                        )
+                    else:
+                        dt = datetime(value.year, value.month, value.day)
+                    if not hasattr(value, 'tzinfo') or value.tzinfo is None:
+                        dt = dt.replace(tzinfo=timezone.utc)
+                    return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+                except Exception:
+                    pass
+
+            if isinstance(value, str):
+                stripped = value.strip()
+                if stripped.startswith("[") and stripped.endswith("]"):
+                    try:
+                        parsed = json.loads(stripped)
+                        if isinstance(parsed, list):
+                            return parsed
+                    except (json.JSONDecodeError, ValueError):
+                        pass
+            return value
+
+        def _view_property_ref(prop_name: str) -> list[str]:
+            return [view_space, view_key, prop_name]
+
+        def _equals_or_in(property_ref: list[str], prop_value: object) -> dict:
+            if isinstance(prop_value, list):
+                return {"in": {"property": property_ref, "values": prop_value}}
+            return {"equals": {"property": property_ref, "value": prop_value}}
+
+        filter_conditions: list[dict] = []
+
+        active_filters = {k: _coerce_filter_value(v) for k, v in filters.items() if v is not None}
+        for prop_name, prop_value in active_filters.items():
+            property_ref = _view_property_ref(prop_name)
+            is_array_property = property_is_array.get(prop_name, False)
+            if is_array_property:
+                values = prop_value if isinstance(prop_value, list) else [prop_value]
+                filter_conditions.append({
+                    "containsAny": {
+                        "property": property_ref,
+                        "values": values,
+                    }
+                })
+            else:
+                filter_conditions.append(_equals_or_in(property_ref, prop_value))
+
+        for prop_name in (exists_properties or []):
+            filter_conditions.append({"exists": {"property": _view_property_ref(prop_name)}})
+
+        for prop_name in (not_exists_properties or []):
+            filter_conditions.append({"not": {"exists": {"property": _view_property_ref(prop_name)}}})
+
+        if instance_space is not None:
+            space_value = _coerce_filter_value(instance_space)
+            filter_conditions.append(_equals_or_in([instance_type, "space"], space_value))
+
+        if external_id_filter is not None:
+            ext_value = _coerce_filter_value(external_id_filter)
+            filter_conditions.append(_equals_or_in([instance_type, "externalId"], ext_value))
+
+        range_by_prop: dict[str, dict] = {}
+        for op, mapping in (
+            ("gt", gt or {}),
+            ("gte", gte or {}),
+            ("lt", lt or {}),
+            ("lte", lte or {}),
+        ):
+            for prop_name, raw_value in mapping.items():
+                if raw_value is None:
+                    continue
+                range_by_prop.setdefault(prop_name, {})[op] = _coerce_filter_value(raw_value)
+        for prop_name, range_body in range_by_prop.items():
+            filter_conditions.append({
+                "range": {
+                    "property": _view_property_ref(prop_name),
+                    **range_body,
+                }
+            })
+
+        if len(filter_conditions) == 1:
+            return filter_conditions[0]
+        elif len(filter_conditions) > 1:
+            return {"and": filter_conditions}
+        else:
+            return None
