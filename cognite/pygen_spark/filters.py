@@ -72,35 +72,49 @@ class AggregateRequestSpec(BaseModel):
 
 def coerce_filter_value(value: object) -> object:
     """Normalize filter values to SDK-like shapes (JSON list strings, datetimes)."""
+    if isinstance(value, datetime):
+        dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+        if value.tzinfo is not None:
+            dt = value.astimezone(timezone.utc)
+        return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+    # Duck-typed datetime-like (e.g. Spark / pandas timestamps)
     if hasattr(value, "timestamp") or hasattr(value, "isoformat"):
         try:
-            dt = value
-            if hasattr(dt, "tzinfo"):
-                if dt.tzinfo is None:
-                    dt = dt.replace(tzinfo=timezone.utc)
-                else:
-                    dt = dt.astimezone(timezone.utc)
-            if hasattr(dt, "isoformat"):
-                return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
-            return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
+            iso = getattr(value, "isoformat", None)
+            if callable(iso):
+                dt_obj = value
+                tzinfo = getattr(dt_obj, "tzinfo", None)
+                if tzinfo is None and hasattr(dt_obj, "replace"):
+                    dt_obj = dt_obj.replace(tzinfo=timezone.utc)
+                elif tzinfo is not None and hasattr(dt_obj, "astimezone"):
+                    dt_obj = dt_obj.astimezone(timezone.utc)
+                result = iso(timespec="milliseconds")
+                return str(result).replace("+00:00", "Z")
+            strftime = getattr(value, "strftime", None)
+            if callable(strftime):
+                return strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
         except (AttributeError, TypeError):
             pass
 
     if hasattr(value, "year") and hasattr(value, "month") and hasattr(value, "day"):
         try:
+            year = int(value.year)
+            month = int(value.month)
+            day = int(value.day)
             if hasattr(value, "hour"):
                 dt = datetime(
-                    value.year,
-                    value.month,
-                    value.day,
-                    value.hour,
-                    value.minute,
-                    value.second,
-                    getattr(value, "microsecond", 0),
+                    year,
+                    month,
+                    day,
+                    int(value.hour),
+                    int(getattr(value, "minute", 0)),
+                    int(getattr(value, "second", 0)),
+                    int(getattr(value, "microsecond", 0)),
                 )
             else:
-                dt = datetime(value.year, value.month, value.day)
-            if not hasattr(value, "tzinfo") or value.tzinfo is None:
+                dt = datetime(year, month, day)
+            if not hasattr(value, "tzinfo") or getattr(value, "tzinfo", None) is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
         except (AttributeError, TypeError, ValueError):
@@ -255,6 +269,19 @@ def build_aggregate_payload(spec: AggregateRequestSpec) -> dict[str, Any]:
     return payload
 
 
+def _aggregate_property_name(property_value: object) -> str:
+    """Normalize CDF aggregate response property to a simple name.
+
+    View-property aggregates return a path list ``[space, View/version, prop]``;
+    count uses the string shorthand ``externalId``.
+    """
+    if isinstance(property_value, list) and property_value:
+        return str(property_value[-1])
+    if property_value is None:
+        return ""
+    return str(property_value)
+
+
 def parse_metric_aggregates(response_data: dict[str, Any]) -> dict[tuple[str, str], object]:
     """Parse ungrouped items[0].aggregates into (aggregate, property) -> value."""
     result: dict[tuple[str, str], object] = {}
@@ -262,7 +289,7 @@ def parse_metric_aggregates(response_data: dict[str, Any]) -> dict[tuple[str, st
     if not items:
         return result
     for agg in items[0].get("aggregates") or []:
-        key = (str(agg.get("aggregate")), str(agg.get("property")))
+        key = (str(agg.get("aggregate")), _aggregate_property_name(agg.get("property")))
         if key[0] and key[1]:
             result[key] = agg.get("value")
     return result
@@ -272,7 +299,15 @@ def parse_aggregate_count(response_data: dict[str, Any]) -> int:
     """Parse COUNT aggregate value (property externalId)."""
     metrics = parse_metric_aggregates(response_data)
     val = metrics.get(("count", "externalId"))
-    return int(val) if val is not None else 0
+    if val is None:
+        return 0
+    if isinstance(val, bool):
+        return int(val)
+    if isinstance(val, (int, float)):
+        return int(val)
+    if isinstance(val, str):
+        return int(val)
+    return int(str(val))
 
 
 def effective_list_request_limit(page_limit: int, row_limit: int | None, rows_yielded: int) -> int | None:

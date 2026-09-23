@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import tomllib
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11
+    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
 from cognite.client import CogniteClient
 from cognite.client.config import ClientConfig
 from cognite.client.credentials import OAuthClientCredentials
@@ -47,9 +51,8 @@ def live_client() -> CogniteClient:
     cognite = data["cognite"]
     runtime = data.get("fn_btp_hierarchy_runtime") or {}
     client_id = runtime.get("client_id") or data.get("hierarchy_workflow_triggers", {}).get("ingest_trigger_client_id")
-    client_secret = (
-        runtime.get("client_secret")
-        or data.get("hierarchy_workflow_trigger_secrets", {}).get("ingest_trigger_client_secret")
+    client_secret = runtime.get("client_secret") or data.get("hierarchy_workflow_trigger_secrets", {}).get(
+        "ingest_trigger_client_secret"
     )
     if not client_id or not client_secret:
         pytest.skip("TOML missing client_id / client_secret")
@@ -237,4 +240,5 @@ def test_live_count_aggregate_matches_tight_list(
         count_val = getattr(items[0], "value", items[0])
         assert int(count_val) == 1
     else:
+        assert values is not None
         assert int(values) == 1

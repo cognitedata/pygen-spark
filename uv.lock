@@ -315,6 +315,7 @@ dev = [
     { name = "pytest-mock" },
     { name = "pytest-rerunfailures" },
     { name = "ruff" },
+    { name = "tomli", marker = "python_full_version < '3.11'" },
     { name = "twine" },
     { name = "typer" },
 ]
@@ -350,6 +351,7 @@ requires-dist = [
     { name = "pytest-rerunfailures", marker = "extra == 'dev'", specifier = ">=14.0" },
     { name = "requests", specifier = ">=2.33.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "tomli", marker = "python_full_version < '3.11' and extra == 'dev'", specifier = ">=2.0.0" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "typer", marker = "extra == 'dev'", specifier = ">=0.9.0" },
     { name = "typing-extensions", specifier = ">=4.5.0" },

@@ -84,9 +84,7 @@ def _rebuild_spec(ctx: dict[str, Any]) -> FilterSpec:
 
 
 @given(
-    parsers.parse(
-        'a view "{external_id}" in space "{space}" version "{version}" for instance type "{instance_type}"'
-    )
+    parsers.parse('a view "{external_id}" in space "{space}" version "{version}" for instance type "{instance_type}"')
 )
 def given_view(filter_ctx: dict[str, Any], external_id: str, space: str, version: str, instance_type: str) -> None:
     filter_ctx["spec"] = FilterSpec(
@@ -113,25 +111,25 @@ def when_equals_str(filter_ctx: dict[str, Any], prop: str, value: str) -> None:
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I build a filter with property "{prop}" equal to list \'{json_list}\''))
+@when(parsers.parse("I build a filter with property \"{prop}\" equal to list '{json_list}'"))
 def when_equals_list(filter_ctx: dict[str, Any], prop: str, json_list: str) -> None:
     filter_ctx["property_filters"][prop] = json.loads(json_list)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I build a filter with exists properties \'{json_list}\''))
+@when(parsers.parse("I build a filter with exists properties '{json_list}'"))
 def when_exists(filter_ctx: dict[str, Any], json_list: str) -> None:
     filter_ctx["exists_properties"] = json.loads(json_list)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I build a filter with not-exists properties \'{json_list}\''))
+@when(parsers.parse("I build a filter with not-exists properties '{json_list}'"))
 def when_not_exists(filter_ctx: dict[str, Any], json_list: str) -> None:
     filter_ctx["not_exists_properties"] = json.loads(json_list)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I add exists properties \'{json_list}\''))
+@when(parsers.parse("I add exists properties '{json_list}'"))
 def when_add_exists(filter_ctx: dict[str, Any], json_list: str) -> None:
     filter_ctx["exists_properties"] = json.loads(json_list)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
@@ -143,7 +141,7 @@ def when_instance_space(filter_ctx: dict[str, Any], space: str) -> None:
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I build a filter with instance space list \'{json_list}\''))
+@when(parsers.parse("I build a filter with instance space list '{json_list}'"))
 def when_instance_space_list(filter_ctx: dict[str, Any], json_list: str) -> None:
     filter_ctx["instance_space"] = json.loads(json_list)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
@@ -155,19 +153,19 @@ def when_external_id(filter_ctx: dict[str, Any], ext_id: str) -> None:
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I build a filter with gt map \'{json_map}\''))
+@when(parsers.parse("I build a filter with gt map '{json_map}'"))
 def when_gt(filter_ctx: dict[str, Any], json_map: str) -> None:
     filter_ctx["gt"] = json.loads(json_map)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I build a filter with gte map \'{json_map}\''))
+@when(parsers.parse("I build a filter with gte map '{json_map}'"))
 def when_gte(filter_ctx: dict[str, Any], json_map: str) -> None:
     filter_ctx["gte"] = json.loads(json_map)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
 
 
-@when(parsers.parse('I add lt map \'{json_map}\''))
+@when(parsers.parse("I add lt map '{json_map}'"))
 def when_add_lt(filter_ctx: dict[str, Any], json_map: str) -> None:
     filter_ctx["lt"] = json.loads(json_map)
     filter_ctx["result"] = build_filter_json(_rebuild_spec(filter_ctx))
@@ -189,11 +187,7 @@ def then_filter_json(filter_ctx: dict[str, Any], docstring: str) -> None:
     assert filter_ctx["result"] == expected
 
 
-@given(
-    parsers.parse(
-        "page_limit is {page_limit:d} and row_limit is {row_limit} and rows_yielded is {rows_yielded:d}"
-    )
-)
+@given(parsers.parse("page_limit is {page_limit:d} and row_limit is {row_limit} and rows_yielded is {rows_yielded:d}"))
 def given_limit(limit_ctx: dict[str, Any], page_limit: int, row_limit: str, rows_yielded: int) -> None:
     limit_ctx["page_limit"] = page_limit
     limit_ctx["row_limit"] = None if row_limit == "None" else int(row_limit)
@@ -219,13 +213,10 @@ def then_request_limit(limit_ctx: dict[str, Any], expected: str) -> None:
 
 @given(
     parsers.parse(
-        'an aggregate view "{external_id}" in space "{space}" version "{version}" '
-        'for instance type "{instance_type}"'
+        'an aggregate view "{external_id}" in space "{space}" version "{version}" for instance type "{instance_type}"'
     )
 )
-def given_agg_view(
-    agg_ctx: dict[str, Any], external_id: str, space: str, version: str, instance_type: str
-) -> None:
+def given_agg_view(agg_ctx: dict[str, Any], external_id: str, space: str, version: str, instance_type: str) -> None:
     agg_ctx["view_space"] = space
     agg_ctx["view_external_id"] = external_id
     agg_ctx["view_version"] = version
@@ -234,8 +225,7 @@ def given_agg_view(
 
 @given(
     parsers.parse(
-        'a filter equals property "{prop}" to "{value}" on view "{external_id}" '
-        'space "{space}" version "{version}"'
+        'a filter equals property "{prop}" to "{value}" on view "{external_id}" space "{space}" version "{version}"'
     )
 )
 def given_list_filter(
@@ -263,7 +253,10 @@ def _table_rows(datatable: list) -> list[dict[str, str]]:  # type: ignore[type-a
 
 @when("I build an aggregate request with metrics:")
 def when_agg_metrics(agg_ctx: dict[str, Any], datatable) -> None:  # type: ignore[no-untyped-def]
-    metrics = [AggregateMetric(fn=row["fn"], property=row["property"]) for row in _table_rows(datatable)]
+    metrics = [
+        AggregateMetric(fn=row["fn"], property=row["property"])  # type: ignore[arg-type]
+        for row in _table_rows(datatable)
+    ]
     agg_ctx["metrics"] = metrics
     agg_ctx["payload"] = build_aggregate_payload(
         AggregateRequestSpec(
@@ -290,8 +283,7 @@ def then_agg_list(agg_ctx: dict[str, Any], docstring: str) -> None:
 
 @then(
     parsers.parse(
-        'the aggregate payload should reference view space "{space}" '
-        'externalId "{external_id}" version "{version}"'
+        'the aggregate payload should reference view space "{space}" externalId "{external_id}" version "{version}"'
     )
 )
 def then_agg_view(agg_ctx: dict[str, Any], space: str, external_id: str, version: str) -> None:

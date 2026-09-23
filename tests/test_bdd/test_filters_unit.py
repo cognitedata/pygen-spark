@@ -7,7 +7,6 @@ import pytest
 from cognite.pygen_spark.filters import (
     AggregateMetric,
     AggregateRequestSpec,
-    FilterSpec,
     build_aggregate_payload,
     build_filter_json,
     effective_list_request_limit,
@@ -50,4 +49,25 @@ def test_effective_limit_none_row_limit() -> None:
 
 
 def test_empty_filter_spec() -> None:
+    from cognite.pygen_spark.filters import FilterSpec
+
     assert build_filter_json(FilterSpec(view_space="s", view_external_id="V", view_version="v1")) is None
+
+
+def test_parse_metric_aggregates_path_list() -> None:
+    from cognite.pygen_spark.filters import parse_metric_aggregates
+
+    data = {
+        "items": [
+            {
+                "aggregates": [
+                    {
+                        "aggregate": "min",
+                        "property": ["sp-lims", "LimsResults/v1", "DateAuthorised"],
+                        "value": 1,
+                    }
+                ]
+            }
+        ]
+    }
+    assert parse_metric_aggregates(data)[("min", "DateAuthorised")] == 1

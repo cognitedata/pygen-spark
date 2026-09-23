@@ -46,10 +46,10 @@ Feature: CDF instances/aggregate payloads for metric pushdown
     When I parse the aggregate count
     Then the count value should be 12
 
-  Scenario: Parse min max response
+  Scenario: Parse min max response with path-list property
     Given an aggregate response:
       """
-      {"items": [{"aggregates": [{"aggregate": "min", "property": "DateAuthorised", "value": 1704067200000}, {"aggregate": "max", "property": "DateAuthorised", "value": 1735689600000}]}]}
+      {"items": [{"aggregates": [{"aggregate": "min", "property": ["sp-lims", "LimsResults/v1", "DateAuthorised"], "value": 1704067200000}, {"aggregate": "max", "property": ["sp-lims", "LimsResults/v1", "DateAuthorised"], "value": 1735689600000}]}]}
       """
     When I parse the metric aggregates
     Then the metric ("min", "DateAuthorised") should be 1704067200000

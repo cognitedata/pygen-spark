@@ -43,6 +43,7 @@ dev = [
     "pytest-mock>=3.10.0",
     "pytest-rerunfailures>=14.0",
     "pytest-icdiff>=0.8",
+    "tomli>=2.0.0; python_version < '3.11'",
     "black>=24.4.2",
     "ruff>=0.1.0",
     "mypy>=1.5.0",
@@ -119,6 +120,18 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "cognite.pygen.*"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "tomli"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pytest_bdd"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "pytest_bdd.*"
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

@@ -597,13 +597,9 @@ class {{ view.external_id }}UDTF:
                 aggregates_raw = _parse_json_value(_aggregates)
                 group_by_raw = _parse_json_value(_group_by)
                 if not isinstance(aggregates_raw, list) or not aggregates_raw:
-                    error_msg = "aggregate mode requires _aggregates JSON list of {fn, property}"
-                    sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
-                    return
+                    raise ValueError("aggregate mode requires _aggregates JSON list of {fn, property}")
                 if len(aggregates_raw) > 5:
-                    error_msg = "instances/aggregate allows at most 5 aggregates per request"
-                    sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
-                    return
+                    raise ValueError("instances/aggregate allows at most 5 aggregates per request")
 
                 aggregates_payload: list[dict] = []
                 metric_keys: list[tuple[str, str]] = []
@@ -627,9 +623,7 @@ class {{ view.external_id }}UDTF:
                         metric_keys.append((fn, prop))
 
                 if not aggregates_payload:
-                    error_msg = "No valid aggregates in _aggregates"
-                    sys.stderr.write(f"[UDTF] ✗ CONFIGURATION: {error_msg}\n")
-                    return
+                    raise ValueError("No valid aggregates in _aggregates")
 
                 group_by_cols: list[str] = []
                 if isinstance(group_by_raw, list):
@@ -664,24 +658,45 @@ class {{ view.external_id }}UDTF:
                 response_data = response.json()
                 items = response_data.get("items") or []
 
-                # Yield one row per aggregate item: [group cols...] + [metric values...]
-                # When ungrouped, yield a single row of metric values only.
+                # Yield rows matching outputSchema length (PySpark requires schema alignment).
+                schema_fields = [f.name for f in self.outputSchema().fields]
+                col_to_idx = {name: i for i, name in enumerate(schema_fields)}
+
+                def _agg_prop_name(property_value: object) -> str:
+                    if isinstance(property_value, list) and property_value:
+                        return str(property_value[-1])
+                    if property_value is None:
+                        return ""
+                    return str(property_value)
+
                 for item in items:
                     if not isinstance(item, dict):
                         continue
-                    metrics_lookup = {
-                        (str(a.get("aggregate")), str(a.get("property"))): a.get("value")
-                        for a in (item.get("aggregates") or [])
-                        if isinstance(a, dict)
-                    }
+                    metrics_lookup: dict[tuple[str, str], object] = {}
+                    for a in (item.get("aggregates") or []):
+                        if not isinstance(a, dict):
+                            continue
+                        agg_fn = str(a.get("aggregate") or "")
+                        prop_name = _agg_prop_name(a.get("property"))
+                        if agg_fn and prop_name:
+                            metrics_lookup[(agg_fn, prop_name)] = a.get("value")
+
                     group = item.get("group") or {}
-                    row_values: list[object] = []
+                    row_values: list[object] = [None] * len(schema_fields)
+
                     for col in group_by_cols:
-                        row_values.append(group.get(col) if isinstance(group, dict) else None)
-                    for key in metric_keys:
-                        row_values.append(metrics_lookup.get(key))
-                    # Pad to full view output schema with None for non-metric columns when needed
-                    # Aggregate pushdown yields a compact tuple; Spark rewrite selects aliases.
+                        if col in col_to_idx:
+                            row_values[col_to_idx[col]] = group.get(col) if isinstance(group, dict) else None
+
+                    for fn, prop in metric_keys:
+                        # COUNT maps onto the identity external_id output column.
+                        if fn == "count" and prop in {"externalId", "external_id"}:
+                            target_col = "external_id"
+                        else:
+                            target_col = prop
+                        if target_col in col_to_idx:
+                            row_values[col_to_idx[target_col]] = metrics_lookup.get((fn, prop))
+
                     yield tuple(row_values)
                 return
 
