@@ -629,6 +629,8 @@ class {{ view.external_id }}UDTF:
                 if isinstance(group_by_raw, list):
                     group_by_cols = [str(c) for c in group_by_raw if c is not None]
 
+                # Aggregate API limit caps groupBy buckets (not SQL LIMIT on list scans).
+                agg_limit = 1000
                 agg_payload: dict[str, object] = {
                     "view": {
                         "type": "view",
@@ -639,7 +641,7 @@ class {{ view.external_id }}UDTF:
                     "instanceType": "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
                     "query": "",
                     "aggregates": aggregates_payload,
-                    "limit": 1000,
+                    "limit": agg_limit,
                     "operator": "AND",
                 }
                 if filter_json:

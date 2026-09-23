@@ -7,15 +7,11 @@ Secrets are never logged. Tests skip when the TOML file is missing.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any
 
 import pytest
-
-try:
-    import tomllib
-except ModuleNotFoundError:  # Python < 3.11
-    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
 from cognite.client import CogniteClient
 from cognite.client.config import ClientConfig
 from cognite.client.credentials import OAuthClientCredentials
@@ -27,6 +23,12 @@ from cognite.pygen_spark.filters import (
     build_aggregate_payload,
     build_filter_json,
 )
+
+# Prefer stdlib tomllib on 3.11+; mypy on 3.10 only type-checks the else branch.
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
 
 DEFAULT_TOML = Path(r"C:\Users\FredrikHolm\Downloads\PRD-Data Quality\cog-sail-client_id.toml")
 

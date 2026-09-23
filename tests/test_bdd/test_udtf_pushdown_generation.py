@@ -8,8 +8,6 @@ from cognite.client import data_modeling as dm
 
 pytest.importorskip("pyspark")
 
-from cognite.pygen_spark.udtf_generator import SparkMultiAPIGenerator
-
 
 @pytest.fixture
 def lims_view() -> dm.View:
@@ -34,7 +32,9 @@ def lims_view() -> dm.View:
 
 
 @pytest.fixture
-def generator(mock_cognite_client: CogniteClient, lims_view: dm.View) -> SparkMultiAPIGenerator:
+def generator(mock_cognite_client: CogniteClient, lims_view: dm.View):
+    from cognite.pygen_spark.udtf_generator import SparkMultiAPIGenerator
+
     model = dm.DataModel(
         space="sp-lims",
         external_id="lims",
@@ -54,7 +54,7 @@ def generator(mock_cognite_client: CogniteClient, lims_view: dm.View) -> SparkMu
     )
 
 
-def test_generated_udtf_includes_pushdown_params(generator: SparkMultiAPIGenerator, lims_view: dm.View) -> None:
+def test_generated_udtf_includes_pushdown_params(generator, lims_view: dm.View) -> None:
     code = generator.generate_udtf(lims_view, include_analyze=True, use_udtf_decorator=False)
     assert "_exists" in code
     assert "_not_exists" in code
@@ -68,9 +68,11 @@ def test_generated_udtf_includes_pushdown_params(generator: SparkMultiAPIGenerat
     assert "rows_yielded" in code
     assert "raise ValueError" in code
     assert "col_to_idx" in code
+    assert '"limit": request_limit' in code
+    assert "request_limit = page_limit" in code
 
 
-def test_generated_view_sql_includes_pushdown_nulls(generator: SparkMultiAPIGenerator, lims_view: dm.View) -> None:
+def test_generated_view_sql_includes_pushdown_nulls(generator, lims_view: dm.View) -> None:
     sql = generator.generate_view_sql(view=lims_view, secret_scope="test_scope")
     assert "_exists => NULL" in sql
     assert "_row_limit => NULL" in sql

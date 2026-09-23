@@ -127,6 +127,10 @@ module = "tomli"
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
+module = "tomllib"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
 module = "pytest_bdd"
 ignore_missing_imports = true
 
