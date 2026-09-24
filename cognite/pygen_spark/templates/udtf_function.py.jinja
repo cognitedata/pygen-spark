@@ -61,8 +61,20 @@ class {{ view.external_id }}UDTF:
         cdf_cluster,
         project,
 {% for prop in properties %}
-        {{ prop.name }}=None{% if not loop.last %},{% endif %}
+        {{ prop.name }}=None,
 {% endfor %}
+        instance_space=None,
+        external_id=None,
+        _exists=None,
+        _not_exists=None,
+        _gt=None,
+        _gte=None,
+        _lt=None,
+        _lte=None,
+        _row_limit=None,
+        _query_mode=None,
+        _aggregates=None,
+        _group_by=None,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
@@ -78,6 +90,15 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
             {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} column (optional, defaults to None)
 {% endfor %}
+            instance_space: Optional instance identity space filter (pushdown)
+            external_id: Optional instance identity externalId filter (pushdown)
+            _exists: Optional JSON list of properties for IS NOT NULL (exists)
+            _not_exists: Optional JSON list of properties for IS NULL (not exists)
+            _gt/_gte/_lt/_lte: Optional JSON maps for range pushdown
+            _row_limit: Optional SQL LIMIT pushdown for instances/list
+            _query_mode: Optional "list" (default) or "aggregate"
+            _aggregates: Optional JSON list of {fn, property} for aggregate mode
+            _group_by: Optional JSON list of groupBy property names
         
         Returns:
             AnalyzeResult containing the output schema
@@ -115,8 +136,20 @@ class {{ view.external_id }}UDTF:
         cdf_cluster: str | None = None,
         project: str | None = None,
 {% for prop in properties %}
-        {{ prop.name }}: object | None = None{% if not loop.last %},{% endif %}
+        {{ prop.name }}: object | None = None,
 {% endfor %}
+        instance_space: object | None = None,
+        external_id: object | None = None,
+        _exists: object | None = None,
+        _not_exists: object | None = None,
+        _gt: object | None = None,
+        _gte: object | None = None,
+        _lt: object | None = None,
+        _lte: object | None = None,
+        _row_limit: object | None = None,
+        _query_mode: object | None = None,
+        _aggregates: object | None = None,
+        _group_by: object | None = None,
     ) -> Iterator[tuple]:
         """Execute scalar UDTF and yield rows as tuples.
         
@@ -137,9 +170,18 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
             {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} (scalar value)
 {% endfor %}
+            instance_space: Instance identity space filter (equals or JSON list)
+            external_id: Instance identity externalId filter (equals or JSON list)
+            _exists: JSON list of view properties for exists (IS NOT NULL)
+            _not_exists: JSON list of view properties for not-exists (IS NULL)
+            _gt/_gte/_lt/_lte: JSON maps of property -> value for range filters
+            _row_limit: Optional row LIMIT for instances/list pagination
+            _query_mode: "list" (default) or "aggregate"
+            _aggregates: JSON list of {fn, property} for aggregate mode
+            _group_by: JSON list of groupBy property names
         
         Yields:
-            Tuples representing rows from the View
+            Tuples representing rows from the View (list mode) or aggregate metrics (aggregate mode)
         """
         import sys
         
@@ -445,7 +487,88 @@ class {{ view.external_id }}UDTF:
                 if extracted_prop is not None:
                     filter_params["{{ prop.prop_name }}"] = extracted_prop
 {% endfor %}
-            filter_json = self._build_filter_json(filter_params)
+
+            def _parse_json_value(value: object | None) -> object | None:
+                if value is None:
+                    return None
+                extracted = _extract_scalar(value)
+                if extracted is None:
+                    return None
+                if isinstance(extracted, (dict, list)):
+                    return extracted
+                if isinstance(extracted, str):
+                    stripped = extracted.strip()
+                    if not stripped:
+                        return None
+                    if (stripped.startswith("[") and stripped.endswith("]")) or (
+                        stripped.startswith("{") and stripped.endswith("}")
+                    ):
+                        try:
+                            return json.loads(stripped)
+                        except (json.JSONDecodeError, ValueError):
+                            return extracted
+                    return extracted
+                return extracted
+
+            def _parse_name_list(value: object | None) -> list[str]:
+                parsed = _parse_json_value(value)
+                if parsed is None:
+                    return []
+                if isinstance(parsed, str):
+                    return [parsed]
+                if isinstance(parsed, list):
+                    return [str(item) for item in parsed if item is not None]
+                return []
+
+            def _parse_range_map(value: object | None) -> dict[str, object]:
+                parsed = _parse_json_value(value)
+                if not isinstance(parsed, dict):
+                    return {}
+                return {str(k): v for k, v in parsed.items() if v is not None}
+
+            exists_props = _parse_name_list(_exists)
+            not_exists_props = _parse_name_list(_not_exists)
+            gt_map = _parse_range_map(_gt)
+            gte_map = _parse_range_map(_gte)
+            lt_map = _parse_range_map(_lt)
+            lte_map = _parse_range_map(_lte)
+
+            instance_space_value = _parse_json_value(instance_space)
+            if isinstance(instance_space_value, list) and len(instance_space_value) == 1:
+                instance_space_value = instance_space_value[0]
+            external_id_value = _parse_json_value(external_id)
+            if isinstance(external_id_value, list) and len(external_id_value) == 1:
+                external_id_value = external_id_value[0]
+
+            filter_json = self._build_filter_json(
+                filter_params,
+                exists_properties=exists_props,
+                not_exists_properties=not_exists_props,
+                instance_space=instance_space_value,
+                external_id_filter=external_id_value,
+                gt=gt_map,
+                gte=gte_map,
+                lt=lt_map,
+                lte=lte_map,
+            )
+
+            query_mode = _extract_scalar(_query_mode)
+            if isinstance(query_mode, str):
+                query_mode = query_mode.strip().lower()
+            else:
+                query_mode = "list"
+            if query_mode not in {"list", "aggregate"}:
+                query_mode = "list"
+
+            row_limit_raw = _extract_scalar(_row_limit)
+            effective_row_limit: int | None = None
+            if row_limit_raw is not None:
+                try:
+                    effective_row_limit = int(row_limit_raw)
+                except (TypeError, ValueError):
+                    effective_row_limit = None
+                if effective_row_limit is not None and effective_row_limit < 0:
+                    effective_row_limit = None
             
             # Get OAuth token (with caching)
             try:
@@ -468,6 +591,117 @@ class {{ view.external_id }}UDTF:
             
             # Build API URL
             base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+
+            # Aggregate mode: POST /models/instances/aggregate (no list pagination)
+            if query_mode == "aggregate":
+                aggregates_raw = _parse_json_value(_aggregates)
+                group_by_raw = _parse_json_value(_group_by)
+                if not isinstance(aggregates_raw, list) or not aggregates_raw:
+                    raise ValueError("aggregate mode requires _aggregates JSON list of {fn, property}")
+                if len(aggregates_raw) > 5:
+                    raise ValueError("instances/aggregate allows at most 5 aggregates per request")
+
+                aggregates_payload: list[dict] = []
+                metric_keys: list[tuple[str, str]] = []
+                for spec in aggregates_raw:
+                    if not isinstance(spec, dict):
+                        continue
+                    fn = str(spec.get("fn") or "").strip().lower()
+                    prop = str(spec.get("property") or "").strip()
+                    if not fn or not prop:
+                        continue
+                    if fn == "count" and prop in {"externalId", "external_id"}:
+                        aggregates_payload.append({"count": {"property": "externalId"}})
+                        metric_keys.append(("count", "externalId"))
+                    else:
+                        property_ref = [
+                            "{{ view.space | escape_python_literal }}",
+                            "{{ (view.external_id + '/' + view.version) | escape_python_literal }}",
+                            prop,
+                        ]
+                        aggregates_payload.append({fn: {"property": property_ref}})
+                        metric_keys.append((fn, prop))
+
+                if not aggregates_payload:
+                    raise ValueError("No valid aggregates in _aggregates")
+
+                group_by_cols: list[str] = []
+                if isinstance(group_by_raw, list):
+                    group_by_cols = [str(c) for c in group_by_raw if c is not None]
+
+                # Aggregate API limit caps groupBy buckets (not SQL LIMIT on list scans).
+                agg_limit = 1000
+                agg_payload: dict[str, object] = {
+                    "view": {
+                        "type": "view",
+                        "space": "{{ view.space | escape_python_literal }}",
+                        "externalId": "{{ view.external_id | escape_python_literal }}",
+                        "version": "{{ view.version | escape_python_literal }}",
+                    },
+                    "instanceType": "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
+                    "query": "",
+                    "aggregates": aggregates_payload,
+                    "limit": agg_limit,
+                    "operator": "AND",
+                }
+                if filter_json:
+                    agg_payload["filter"] = filter_json
+                if group_by_cols:
+                    agg_payload["groupBy"] = group_by_cols
+
+                agg_url = f"{base_url}/api/v1/projects/{project_str}/models/instances/aggregate"
+                response = _make_request(
+                    method="POST",
+                    url=agg_url,
+                    token=token,
+                    json_data=agg_payload,
+                    timeout=30,
+                )
+                response_data = response.json()
+                items = response_data.get("items") or []
+
+                # Yield rows matching outputSchema length (PySpark requires schema alignment).
+                schema_fields = [f.name for f in self.outputSchema().fields]
+                col_to_idx = {name: i for i, name in enumerate(schema_fields)}
+
+                def _agg_prop_name(property_value: object) -> str:
+                    if isinstance(property_value, list) and property_value:
+                        return str(property_value[-1])
+                    if property_value is None:
+                        return ""
+                    return str(property_value)
+
+                for item in items:
+                    if not isinstance(item, dict):
+                        continue
+                    metrics_lookup: dict[tuple[str, str], object] = {}
+                    for a in (item.get("aggregates") or []):
+                        if not isinstance(a, dict):
+                            continue
+                        agg_fn = str(a.get("aggregate") or "")
+                        prop_name = _agg_prop_name(a.get("property"))
+                        if agg_fn and prop_name:
+                            metrics_lookup[(agg_fn, prop_name)] = a.get("value")
+
+                    group = item.get("group") or {}
+                    row_values: list[object] = [None] * len(schema_fields)
+
+                    for col in group_by_cols:
+                        if col in col_to_idx:
+                            row_values[col_to_idx[col]] = group.get(col) if isinstance(group, dict) else None
+
+                    for fn, prop in metric_keys:
+                        # COUNT maps onto the identity external_id output column.
+                        if fn == "count" and prop in {"externalId", "external_id"}:
+                            target_col = "external_id"
+                        else:
+                            target_col = prop
+                        if target_col in col_to_idx:
+                            row_values[col_to_idx[target_col]] = metrics_lookup.get((fn, prop))
+
+                    yield tuple(row_values)
+                return
+
             api_path = f"/api/v1/projects/{project_str}/models/instances/list"
             full_url = f"{base_url}{api_path}"
             
@@ -542,7 +776,15 @@ class {{ view.external_id }}UDTF:
 
             # Pagination: iterate through all pages using nextCursor
             next_cursor: str | None = None
+            rows_yielded = 0
             while True:
+                request_limit = page_limit
+                if effective_row_limit is not None:
+                    remaining = effective_row_limit - rows_yielded
+                    if remaining <= 0:
+                        break
+                    request_limit = min(page_limit, remaining)
+
                 # Build request payload
                 payload = {
                     "sources": [
@@ -556,7 +798,7 @@ class {{ view.external_id }}UDTF:
                         }
                     ],
                     "instanceType": "{% if view.used_for == 'edge' %}edge{% else %}node{% endif %}",
-                    "limit": page_limit,
+                    "limit": request_limit,
                     "includeTyping": False,
                 }
                 if filter_json:
@@ -575,6 +817,7 @@ class {{ view.external_id }}UDTF:
                 items = response_data.get("items", [])
 
                 # Process items from this page
+                stop_early = False
                 for item in items:
                     row_values: list[object] = []
 
@@ -604,6 +847,13 @@ class {{ view.external_id }}UDTF:
                     row_values.append(_cdf_timestamp_value_to_datetime(item.get("deletedTime")))
 
                     yield tuple(row_values)
+                    rows_yielded += 1
+                    if effective_row_limit is not None and rows_yielded >= effective_row_limit:
+                        stop_early = True
+                        break
+
+                if stop_early:
+                    break
 
                 # Check for next page, then release this page's memory before fetching more
                 next_cursor = response_data.get("nextCursor")
@@ -618,137 +868,7 @@ class {{ view.external_id }}UDTF:
             raise
         
         return
-    def _build_filter_json(self, filters: dict[str, object]) -> dict | None:
-        """Build CDF API filter JSON from input parameters.
-        
-        Replicates SDK's filter serialization format exactly.
-        
-        Args:
-            filters: Dictionary of filter conditions
-            
-        Returns:
-            CDF API filter JSON dict or None if no filters
-        """
-        import json
-        from datetime import datetime, timezone
-
-        # Create lookup dictionary for property types (array vs scalar)
-        # This allows us to check if a property is an array type in the View definition
-        property_is_array: dict[str, bool] = {
-{% for prop in properties %}
-            "{{ prop.prop_name }}": {{ prop.is_array }},
-{% endfor %}
-        }
-
-        def _coerce_filter_value(value: object) -> object:
-            """Normalize filter values to SDK-like shapes (supports JSON list strings and datetime objects)."""
-            # Handle datetime objects (from SQL TIMESTAMP) - convert to ISO 8601
-            if hasattr(value, 'timestamp') or hasattr(value, 'isoformat'):
-                try:
-                    dt = value
-                    # Ensure it's timezone-aware and in UTC
-                    if hasattr(dt, 'tzinfo'):
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        else:
-                            dt = dt.astimezone(timezone.utc)
-                    # Convert to ISO 8601 format (CDF API expects ISO 8601 for datetime properties)
-                    if hasattr(dt, 'isoformat'):
-                        return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-                    else:
-                        return dt.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
-                except (AttributeError, TypeError):
-                    pass
-            
-            # Also check for datetime-like objects with year/month/day attributes
-            if hasattr(value, 'year') and hasattr(value, 'month') and hasattr(value, 'day'):
-                try:
-                    # Try to construct a datetime and convert
-                    if hasattr(value, 'hour'):
-                        dt = datetime(
-                            value.year, value.month, value.day,
-                            value.hour, value.minute, value.second,
-                            getattr(value, 'microsecond', 0)
-                        )
-                    else:
-                        dt = datetime(value.year, value.month, value.day)
-                    # Assume UTC if no timezone info
-                    if not hasattr(value, 'tzinfo') or value.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    return dt.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
-                except Exception:
-                    pass
-            
-            # Handle string values (JSON list strings)
-            if isinstance(value, str):
-                stripped = value.strip()
-                if stripped.startswith("[") and stripped.endswith("]"):
-                    try:
-                        parsed = json.loads(stripped)
-                        if isinstance(parsed, list):
-                            return parsed
-                    except (json.JSONDecodeError, ValueError):
-                        pass
-            return value
-
-        # Filter out None values and normalize list-like strings and datetime objects
-        active_filters = {k: _coerce_filter_value(v) for k, v in filters.items() if v is not None}
-        
-        if not active_filters:
-            return None
-        
-        # Build property references and filter conditions
-        filter_conditions = []
-        
-        for prop_name, prop_value in active_filters.items():
-            # Create property reference as list (matches SDK format)
-            # Format: ["space", "view_external_id/view_version", "property_name"]
-            property_ref = [
-                "{{ view.space | escape_python_literal }}",
-                "{{ (view.external_id + '/' + view.version) | escape_python_literal }}",
-                prop_name,
-            ]
-            
-            # Check if this property is an array type in the View definition
-            is_array_property = property_is_array.get(prop_name, False)
-            
-            # Determine filter type based on property type and input value type
-            if is_array_property:
-                # For array properties, use containsAny filter
-                # CDF API: containsAny checks if the array property contains any of the provided values
-                values = prop_value if isinstance(prop_value, list) else [prop_value]
-                filter_conditions.append({
-                    "containsAny": {
-                        "property": property_ref,
-                        "values": values,
-                    }
-                })
-            else:
-                # For scalar properties, use equals or in filter
-                if isinstance(prop_value, list):
-                    # List values use In filter (matches any value in the list)
-                    filter_conditions.append({
-                        "in": {
-                            "property": property_ref,
-                            "values": prop_value,
-                        }
-                    })
-                else:
-                    # Single values use Equals filter
-                    filter_conditions.append({
-                        "equals": {
-                            "property": property_ref,
-                            "value": prop_value,
-                        }
-                    })
-        
-        # Combine multiple filters with And
-        if len(filter_conditions) == 1:
-            return filter_conditions[0]
-        elif len(filter_conditions) > 1:
-            return {"and": filter_conditions}
-        else:
-            return None
+{% include '_filters.py.jinja' %}
 
     @staticmethod
     def outputSchema() -> StructType:

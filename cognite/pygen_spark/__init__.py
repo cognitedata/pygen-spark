@@ -1,6 +1,14 @@
 """Code generation library for creating Python UDTFs from CDF Data Models."""
 
 from cognite.pygen_spark.config import CDFConnectionConfig
+from cognite.pygen_spark.filters import (
+    AggregateMetric,
+    AggregateRequestSpec,
+    FilterSpec,
+    build_aggregate_payload,
+    build_filter_json,
+    effective_list_request_limit,
+)
 
 try:
     from cognite.pygen_spark.fields import UDTFField
@@ -10,7 +18,16 @@ except (
     AttributeError,
 ):  # pragma: no cover - fallback for environments without PySpark
     UDTFField = None  # type: ignore[assignment,misc]
-from cognite.pygen_spark.generator import SparkUDTFGenerator
+
+try:
+    from cognite.pygen_spark.generator import SparkUDTFGenerator
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
+    SparkUDTFGenerator = None  # type: ignore[assignment,misc]
+
 from cognite.pygen_spark.models import (
     UDTFGenerationResult,
     ViewSQLGenerationResult,
@@ -45,12 +62,18 @@ from cognite.pygen_spark.utils import (
 )
 
 __all__ = [
+    "AggregateMetric",
+    "AggregateRequestSpec",
     "CDFConnectionConfig",
+    "FilterSpec",
     "InstanceId",
     "SparkUDTFGenerator",
     "UDTFGenerationResult",
     "ViewSQLGenerationResult",
     "__version__",
+    "build_aggregate_payload",
+    "build_filter_json",
+    "effective_list_request_limit",
     "parse_instance_id",
     "parse_instance_ids",
     "to_udtf_function_name",

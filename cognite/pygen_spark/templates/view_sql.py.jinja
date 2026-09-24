@@ -4,9 +4,20 @@ SELECT * FROM {{ catalog }}.{{ schema }}.{{ udtf_name }}(
     client_secret => SECRET('{{ secret_scope }}', 'client_secret'),
     tenant_id     => SECRET('{{ secret_scope }}', 'tenant_id'),
     cdf_cluster   => SECRET('{{ secret_scope }}', 'cdf_cluster'),
-    project       => SECRET('{{ secret_scope }}', 'project'){% if properties %},{% endif %}
+    project       => SECRET('{{ secret_scope }}', 'project'),
 {%- for prop in properties %}
-    {{ prop.name }} => NULL{% if not loop.last %},{% endif %}
+    {{ prop.name }} => NULL,
 {%- endfor %}
+    instance_space => NULL,
+    external_id => NULL,
+    _exists => NULL,
+    _not_exists => NULL,
+    _gt => NULL,
+    _gte => NULL,
+    _lt => NULL,
+    _lte => NULL,
+    _row_limit => NULL,
+    _query_mode => NULL,
+    _aggregates => NULL,
+    _group_by => NULL
 )
-

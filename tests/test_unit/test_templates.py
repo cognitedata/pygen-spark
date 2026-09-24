@@ -182,10 +182,14 @@ class TestTemplateRendering:
         spark_multi_api_generator: SparkMultiAPIGenerator,
         sample_view: dm.View,
     ) -> None:
-        """API request uses the computed page_limit rather than a hardcoded 1000."""
+        """List API limit uses adaptive page_limit capped by optional _row_limit."""
         code = spark_multi_api_generator.generate_udtf(sample_view, include_analyze=True, use_udtf_decorator=False)
-        assert '"limit": page_limit' in code
+        assert "page_limit =" in code
+        assert "request_limit = page_limit" in code
+        assert '"limit": request_limit' in code
+        # Adaptive path must not hardcode the list page size as a bare 1000 literal on the payload.
         assert '"limit": 1000' not in code
+        assert "effective_row_limit" in code
 
     @pytest.mark.parametrize(
         ("num_props", "expected_page_limit"),
