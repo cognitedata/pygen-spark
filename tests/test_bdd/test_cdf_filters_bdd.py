@@ -321,6 +321,6 @@ def then_count(agg_ctx: dict[str, Any], value: int) -> None:
     assert agg_ctx["count"] == value
 
 
-@then(parsers.parse('the metric ("{fn}", "{prop}") should be {value:d}'))
-def then_metric(agg_ctx: dict[str, Any], fn: str, prop: str, value: int) -> None:
+@then(parsers.parse('the metric ("{fn}", "{prop}") should be {value:g}'))
+def then_metric(agg_ctx: dict[str, Any], fn: str, prop: str, value: float) -> None:
     assert agg_ctx["metrics_parsed"][(fn, prop)] == value

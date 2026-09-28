@@ -19,6 +19,7 @@ from cognite.pygen_spark.filters import (
     build_aggregate_payload,
     build_filter_json,
     parse_aggregate_count,
+    parse_metric_aggregates,
 )
 from tests.test_live.cogsail import CogsailSeed
 
@@ -112,3 +113,37 @@ def test_count_aggregate_scoped_to_instance_space(live_client: CogniteClient, se
         time.sleep(3)
         count = parse_aggregate_count(live_client.post(url, json=payload).json())
     assert count == expected
+
+
+@pytest.mark.live
+def test_min_max_numeric_aggregate_scoped_to_instance_space(
+    live_client: CogniteClient, seeded_cogsail: CogsailSeed
+) -> None:
+    certificates = seeded_cogsail.by_space[FLEET_A].certificates
+    payload = build_aggregate_payload(
+        AggregateRequestSpec(
+            view_space=seeded_cogsail.view_space,
+            view_external_id=seeded_cogsail.certificate_view_external_id,
+            view_version=seeded_cogsail.view_version,
+            aggregates=[AggregateMetric(fn="min", property="aph_tod"), AggregateMetric(fn="max", property="aph_tod")],
+            filter_json=build_filter_json(
+                FilterSpec(
+                    view_space=seeded_cogsail.view_space,
+                    view_external_id=seeded_cogsail.certificate_view_external_id,
+                    view_version=seeded_cogsail.view_version,
+                    instance_space=FLEET_A,
+                )
+            ),
+        )
+    )
+    url = f"/api/v1/projects/{live_client.config.project}/models/instances/aggregate"
+    expected = {
+        ("min", "aph_tod"): min(c.aph_tod for c in certificates),
+        ("max", "aph_tod"): max(c.aph_tod for c in certificates),
+    }
+    deadline = time.monotonic() + 30
+    metrics = parse_metric_aggregates(live_client.post(url, json=payload).json())
+    while metrics != expected and time.monotonic() < deadline:
+        time.sleep(3)
+        metrics = parse_metric_aggregates(live_client.post(url, json=payload).json())
+    assert metrics == expected

@@ -40,12 +40,21 @@ class SeedBoat(BaseModel):
     description: str | None = None
 
 
+class SeedCertificate(BaseModel):
+    """An ORCCertificate node; ``aph_tod`` is numeric, so MIN / MAX can be pushed to CDF."""
+
+    external_id: str
+    name: str
+    aph_tod: float
+
+
 class SeedSpace(BaseModel):
-    """An instance space and the SmallBoat nodes it should contain."""
+    """An instance space and the SmallBoat / ORCCertificate nodes it should contain."""
 
     space: str
     name: str
     boats: list[SeedBoat] = Field(default_factory=list)
+    certificates: list[SeedCertificate] = Field(default_factory=list)
 
     @property
     def external_ids(self) -> set[str]:
@@ -64,12 +73,20 @@ class CogsailSeed(BaseModel):
     view_space: str = "sailboat"
     view_external_id: str = "SmallBoat"
     view_version: str = "v1"
+    certificate_view_external_id: str = "ORCCertificate"
     spaces: list[SeedSpace] = Field(default_factory=list)
 
     @property
     def view(self) -> dm.ViewId:
-        """View the seed nodes are written through."""
+        """View the seed boats are written through."""
         return dm.ViewId(space=self.view_space, external_id=self.view_external_id, version=self.view_version)
+
+    @property
+    def certificate_view(self) -> dm.ViewId:
+        """View the seed certificates are written through."""
+        return dm.ViewId(
+            space=self.view_space, external_id=self.certificate_view_external_id, version=self.view_version
+        )
 
     @property
     def by_space(self) -> dict[str, SeedSpace]:
@@ -95,6 +112,11 @@ cogsail_seed = CogsailSeed(
                 ),
                 SeedBoat(external_id="seed_small_boat_fleet_a_03", name="Seed Fleet A 03", description=None),
             ],
+            certificates=[
+                SeedCertificate(external_id="seed_orc_certificate_fleet_a_01", name="Seed ORC A 01", aph_tod=480.5),
+                SeedCertificate(external_id="seed_orc_certificate_fleet_a_02", name="Seed ORC A 02", aph_tod=512.0),
+                SeedCertificate(external_id="seed_orc_certificate_fleet_a_03", name="Seed ORC A 03", aph_tod=530.25),
+            ],
         ),
         SeedSpace(
             space="inst_sailboat_fleet_b",
@@ -110,6 +132,9 @@ cogsail_seed = CogsailSeed(
                     name="Seed Fleet B 02",
                     description="Pushdown seed boat, fleet B",
                 ),
+            ],
+            certificates=[
+                SeedCertificate(external_id="seed_orc_certificate_fleet_b_01", name="Seed ORC B 01", aph_tod=600.0),
             ],
         ),
     ]
@@ -179,6 +204,25 @@ def ensure_cogsail_seed(client: CogniteClient, seed: CogsailSeed = cogsail_seed)
         for space in seed.spaces
         for boat in space.boats
     ]
+    # orc_certificate_guid / aph_tod live in the ORCCertificate container the view's hasData filter requires
+    nodes += [
+        dm.NodeApply(
+            space=space.space,
+            external_id=certificate.external_id,
+            sources=[
+                dm.NodeOrEdgeData(
+                    source=seed.certificate_view,
+                    properties={
+                        "name": certificate.name,
+                        "aph_tod": certificate.aph_tod,
+                        "orc_certificate_guid": certificate.external_id,
+                    },
+                )
+            ],
+        )
+        for space in seed.spaces
+        for certificate in space.certificates
+    ]
     client.data_modeling.instances.apply(nodes=nodes)
     return seed
 
@@ -194,7 +238,10 @@ def main() -> None:
 
     seed = ensure_cogsail_seed(client)
     for space in seed.spaces:
-        print(f"{space.space}: {len(space.boats)} SmallBoat nodes ({sorted(space.external_ids)})")
+        print(
+            f"{space.space}: {len(space.boats)} SmallBoat, {len(space.certificates)} ORCCertificate nodes"
+            f" ({sorted(space.external_ids)})"
+        )
 
 
 if __name__ == "__main__":

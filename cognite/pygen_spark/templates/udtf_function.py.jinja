@@ -575,6 +575,16 @@ class {{ view.external_id }}UDTF:
                 if len(aggregates_raw) > 5:
                     raise ValueError("instances/aggregate allows at most 5 aggregates per request")
 
+                # Rows must match the outputSchema column order and types. Positions are rendered at codegen:
+                # Unity Catalog does not run module-level code at query time, so outputSchema() fails here.
+                agg_columns: dict[str, tuple[int, str]] = {
+{% for prop in properties %}
+                    "{{ prop.prop_name }}": ({{ loop.index0 }}, "{{ prop.value_kind }}"),
+{% endfor %}
+                }
+                external_id_index = {{ properties | length + 1 }}
+                column_count = {{ properties | length + 5 }}
+
                 aggregates_payload: list[dict] = []
                 metric_keys: list[tuple[str, str]] = []
                 for spec in aggregates_raw:
@@ -588,12 +598,14 @@ class {{ view.external_id }}UDTF:
                         aggregates_payload.append({"count": {"property": "externalId"}})
                         metric_keys.append(("count", "externalId"))
                     else:
-                        property_ref = [
-                            "{{ view.space | escape_python_literal }}",
-                            "{{ (view.external_id + '/' + view.version) | escape_python_literal }}",
-                            prop,
-                        ]
-                        aggregates_payload.append({fn: {"property": property_ref}})
+                        column = agg_columns.get(prop)
+                        if fn in {"min", "max"} and column is not None and column[1] not in {"long", "double"}:
+                            raise ValueError(
+                                f"CDF instances/aggregate supports {fn.upper()} only on numeric properties; "
+                                f"'{prop}' is {column[1]}. Run this aggregate in Spark on the view instead."
+                            )
+                        # The view is given at the top level; CDF expects the bare property name, not a path.
+                        aggregates_payload.append({fn: {"property": prop}})
                         metric_keys.append((fn, prop))
 
                 if not aggregates_payload:
@@ -633,16 +645,6 @@ class {{ view.external_id }}UDTF:
                 )
                 response_data = response.json()
                 items = response_data.get("items") or []
-
-                # Rows must match the outputSchema column order and types. Positions are rendered at codegen:
-                # Unity Catalog does not run module-level code at query time, so outputSchema() fails here.
-                agg_columns: dict[str, tuple[int, str]] = {
-{% for prop in properties %}
-                    "{{ prop.prop_name }}": ({{ loop.index0 }}, "{{ prop.value_kind }}"),
-{% endfor %}
-                }
-                external_id_index = {{ properties | length + 1 }}
-                column_count = {{ properties | length + 5 }}
 
                 def _agg_cell(value: object, value_kind: str) -> object:
                     if value is None:
