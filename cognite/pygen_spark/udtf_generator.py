@@ -5,15 +5,16 @@ from __future__ import annotations
 import re
 from typing import TYPE_CHECKING
 
-from jinja2 import Environment, PackageLoader, select_autoescape
-
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 # Import relationship types directly from views module (matching pygen-main's approach)
 # Short-term: Import from private API (required until pygen exports this)
 # This pattern applies to ALL pygen dependencies, not just the ones listed here
 from cognite.pygen._core.generators import MultiAPIGenerator  # type: ignore[import-untyped]
+from jinja2 import Environment, PackageLoader, select_autoescape
+
 from cognite.pygen_spark.audit import cdf_audit_http_template_context
 from cognite.pygen_spark.fields import UDTFField
+from cognite.pygen_spark.pushdown import data_model_pushdown_parameters
 
 if TYPE_CHECKING:
     from cognite.client.data_classes.data_modeling import View
@@ -139,6 +140,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         code = template.render(
             view=view,
             properties=udtf_fields,  # Pass UDTFField objects (like pygen-main passes Field objects)
+            pushdown_parameters=data_model_pushdown_parameters.parameters,
             include_analyze=include_analyze,  # Pass include_analyze to template
             use_udtf_decorator=use_udtf_decorator,
             **audit_ctx,
@@ -186,6 +188,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         template_vars = {
             "view": view,
             "properties": self.udtf_fields_for_view(view),
+            "pushdown_parameters": data_model_pushdown_parameters.parameters,
             "secret_scope": secret_scope,
             "udtf_name": to_udtf_function_name(view.external_id),  # Use consistent snake_case conversion
         }

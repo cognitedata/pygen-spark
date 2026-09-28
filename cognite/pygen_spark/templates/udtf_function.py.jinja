@@ -63,18 +63,9 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
         {{ prop.name }}=None,
 {% endfor %}
-        instance_space=None,
-        external_id=None,
-        _exists=None,
-        _not_exists=None,
-        _gt=None,
-        _gte=None,
-        _lt=None,
-        _lte=None,
-        _row_limit=None,
-        _query_mode=None,
-        _aggregates=None,
-        _group_by=None,
+{% for param in pushdown_parameters %}
+        {{ param.name }}=None,
+{% endfor %}
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
@@ -90,15 +81,9 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
             {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} column (optional, defaults to None)
 {% endfor %}
-            instance_space: Optional instance identity space filter (pushdown)
-            external_id: Optional instance identity externalId filter (pushdown)
-            _exists: Optional JSON list of properties for IS NOT NULL (exists)
-            _not_exists: Optional JSON list of properties for IS NULL (not exists)
-            _gt/_gte/_lt/_lte: Optional JSON maps for range pushdown
-            _row_limit: Optional SQL LIMIT pushdown for instances/list
-            _query_mode: Optional "list" (default) or "aggregate"
-            _aggregates: Optional JSON list of {fn, property} for aggregate mode
-            _group_by: Optional JSON list of groupBy property names
+{% for param in pushdown_parameters %}
+            {{ param.name }}: {{ param.description | escape_python_string }} (pushdown, optional)
+{% endfor %}
         
         Returns:
             AnalyzeResult containing the output schema
@@ -138,18 +123,9 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
         {{ prop.name }}: object | None = None,
 {% endfor %}
-        instance_space: object | None = None,
-        external_id: object | None = None,
-        _exists: object | None = None,
-        _not_exists: object | None = None,
-        _gt: object | None = None,
-        _gte: object | None = None,
-        _lt: object | None = None,
-        _lte: object | None = None,
-        _row_limit: object | None = None,
-        _query_mode: object | None = None,
-        _aggregates: object | None = None,
-        _group_by: object | None = None,
+{% for param in pushdown_parameters %}
+        {{ param.name }}: object | None = None,
+{% endfor %}
     ) -> Iterator[tuple]:
         """Execute scalar UDTF and yield rows as tuples.
         
@@ -170,15 +146,9 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
             {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} (scalar value)
 {% endfor %}
-            instance_space: Instance identity space filter (equals or JSON list)
-            external_id: Instance identity externalId filter (equals or JSON list)
-            _exists: JSON list of view properties for exists (IS NOT NULL)
-            _not_exists: JSON list of view properties for not-exists (IS NULL)
-            _gt/_gte/_lt/_lte: JSON maps of property -> value for range filters
-            _row_limit: Optional row LIMIT for instances/list pagination
-            _query_mode: "list" (default) or "aggregate"
-            _aggregates: JSON list of {fn, property} for aggregate mode
-            _group_by: JSON list of groupBy property names
+{% for param in pushdown_parameters %}
+            {{ param.name }}: {{ param.description | escape_python_string }}
+{% endfor %}
         
         Yields:
             Tuples representing rows from the View (list mode) or aggregate metrics (aggregate mode)
