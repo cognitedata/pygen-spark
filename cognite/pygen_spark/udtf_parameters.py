@@ -1,4 +1,4 @@
-"""Pushdown parameters appended to every generated data model UDTF signature.
+"""Parameters shared by generated UDTFs, their view SQL, and Unity Catalog registration.
 
 Single source of truth for the generated ``analyze()`` / ``eval()`` signatures, the catalog view SQL, and
 downstream Unity Catalog function registration, which must all declare the same named arguments.
@@ -10,8 +10,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from pyspark.sql.types import DataType, LongType, StringType
 
 
-class PushdownParameter(BaseModel):
-    """A pushdown parameter accepted by generated data model UDTFs."""
+class UDTFParameter(BaseModel):
+    """A parameter accepted by generated UDTFs."""
 
     model_config = ConfigDict(arbitrary_types_allowed=True, frozen=True)
 
@@ -20,12 +20,12 @@ class PushdownParameter(BaseModel):
     description: str = Field(..., description="Docstring text for the generated UDTF")
 
 
-class PushdownParameterRegistry(BaseModel):
-    """Ordered pushdown parameters, appended after the view property parameters."""
+class UDTFParameterRegistry(BaseModel):
+    """Ordered UDTF parameters."""
 
     model_config = ConfigDict(frozen=True)
 
-    parameters: list[PushdownParameter] = Field(default_factory=list)
+    parameters: list[UDTFParameter] = Field(default_factory=list)
 
     @property
     def names(self) -> list[str]:
@@ -33,60 +33,60 @@ class PushdownParameterRegistry(BaseModel):
         return [parameter.name for parameter in self.parameters]
 
     @property
-    def by_name(self) -> dict[str, PushdownParameter]:
+    def by_name(self) -> dict[str, UDTFParameter]:
         """Convenience property for dict-like access."""
         return {parameter.name: parameter for parameter in self.parameters}
 
-    def get(self, name: str) -> PushdownParameter | None:
-        """Get a pushdown parameter by name."""
+    def get(self, name: str) -> UDTFParameter | None:
+        """Get a parameter by name."""
         return self.by_name.get(name)
 
 
-data_model_pushdown_parameters = PushdownParameterRegistry(
+# Appended after the view property parameters of every data model UDTF.
+data_model_pushdown_parameters = UDTFParameterRegistry(
     parameters=[
-        PushdownParameter(
+        UDTFParameter(
             name="instance_space",
             spark_type=StringType(),
             description="Instance identity space filter (equals or JSON list)",
         ),
-        PushdownParameter(
+        UDTFParameter(
             name="external_id",
             spark_type=StringType(),
             description="Instance identity externalId filter (equals or JSON list)",
         ),
-        PushdownParameter(
+        UDTFParameter(
             name="_exists",
             spark_type=StringType(),
             description="JSON list of view properties for exists (IS NOT NULL)",
         ),
-        PushdownParameter(
+        UDTFParameter(
             name="_not_exists",
             spark_type=StringType(),
             description="JSON list of view properties for not-exists (IS NULL)",
         ),
-        PushdownParameter(name="_gt", spark_type=StringType(), description="JSON map of property -> value for >"),
-        PushdownParameter(name="_gte", spark_type=StringType(), description="JSON map of property -> value for >="),
-        PushdownParameter(name="_lt", spark_type=StringType(), description="JSON map of property -> value for <"),
-        PushdownParameter(name="_lte", spark_type=StringType(), description="JSON map of property -> value for <="),
-        PushdownParameter(
+        UDTFParameter(name="_gt", spark_type=StringType(), description="JSON map of property -> value for >"),
+        UDTFParameter(name="_gte", spark_type=StringType(), description="JSON map of property -> value for >="),
+        UDTFParameter(name="_lt", spark_type=StringType(), description="JSON map of property -> value for <"),
+        UDTFParameter(name="_lte", spark_type=StringType(), description="JSON map of property -> value for <="),
+        UDTFParameter(
             name="_row_limit",
             spark_type=LongType(),
             description="Optional row LIMIT for instances/list pagination",
         ),
-        PushdownParameter(
-            name="_query_mode",
-            spark_type=StringType(),
-            description='"list" (default) or "aggregate"',
-        ),
-        PushdownParameter(
+        UDTFParameter(name="_query_mode", spark_type=StringType(), description='"list" (default) or "aggregate"'),
+        UDTFParameter(
             name="_aggregates",
             spark_type=StringType(),
             description="JSON list of {fn, property} for aggregate mode",
         ),
-        PushdownParameter(
-            name="_group_by",
-            spark_type=StringType(),
-            description="JSON list of groupBy property names",
-        ),
+        UDTFParameter(name="_group_by", spark_type=StringType(), description="JSON list of groupBy property names"),
     ]
+)
+
+# Last parameter of every generated UDTF (data model and time series). Stored in Secret Manager as ``base_url``.
+base_url_parameter = UDTFParameter(
+    name="base_url",
+    spark_type=StringType(),
+    description="CDF API base URL (Private Link / dedicated); empty uses https://{cdf_cluster}.cognitedata.com",
 )

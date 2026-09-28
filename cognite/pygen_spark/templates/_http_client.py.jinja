@@ -171,6 +171,18 @@ def _get_oauth_token(
         raise
 
 
+def _resolve_base_url(base_url: object | None, cdf_cluster: str) -> str:
+    """CDF API base URL: the configured base_url (Private Link / dedicated) or the public cluster URL.
+
+    OAuth scopes are unaffected and always derive from cdf_cluster.
+    """
+    if base_url is not None:
+        candidate = str(base_url).strip().rstrip("/")
+        if candidate:
+            return candidate
+    return f"https://{cdf_cluster}.cognitedata.com"
+
+
 def _make_request(
     method: str,
     url: str,

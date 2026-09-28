@@ -66,6 +66,7 @@ class {{ view.external_id }}UDTF:
 {% for param in pushdown_parameters %}
         {{ param.name }}=None,
 {% endfor %}
+        base_url=None,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
@@ -84,6 +85,7 @@ class {{ view.external_id }}UDTF:
 {% for param in pushdown_parameters %}
             {{ param.name }}: {{ param.description | escape_python_string }} (pushdown, optional)
 {% endfor %}
+            base_url: {{ base_url_parameter.description | escape_python_string }} (optional)
         
         Returns:
             AnalyzeResult containing the output schema
@@ -126,6 +128,7 @@ class {{ view.external_id }}UDTF:
 {% for param in pushdown_parameters %}
         {{ param.name }}: object | None = None,
 {% endfor %}
+        base_url: str | None = None,
     ) -> Iterator[tuple]:
         """Execute scalar UDTF and yield rows as tuples.
         
@@ -149,6 +152,7 @@ class {{ view.external_id }}UDTF:
 {% for param in pushdown_parameters %}
             {{ param.name }}: {{ param.description | escape_python_string }}
 {% endfor %}
+            base_url: {{ base_url_parameter.description | escape_python_string }}
         
         Yields:
             Tuples representing rows from the View (list mode) or aggregate metrics (aggregate mode)
@@ -560,7 +564,7 @@ class {{ view.external_id }}UDTF:
                 raise
             
             # Build API URL
-            base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+            base_url = _resolve_base_url(_extract_scalar(base_url), str(cdf_cluster_str))
 
             # Aggregate mode: POST /models/instances/aggregate (no list pagination)
             if query_mode == "aggregate":

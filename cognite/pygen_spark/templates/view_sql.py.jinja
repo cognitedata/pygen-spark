@@ -9,6 +9,7 @@ SELECT * FROM {{ catalog }}.{{ schema }}.{{ udtf_name }}(
     {{ prop.name }} => NULL,
 {%- endfor %}
 {%- for param in pushdown_parameters %}
-    {{ param.name }} => NULL{{ "," if not loop.last }}
+    {{ param.name }} => NULL,
 {%- endfor %}
+    {{ base_url_parameter.name }} => SECRET('{{ secret_scope }}', '{{ base_url_parameter.name }}')
 )

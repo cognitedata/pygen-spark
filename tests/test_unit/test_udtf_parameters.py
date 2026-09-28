@@ -1,4 +1,4 @@
-"""Pushdown parameter registry keeps generated UDTF signatures and view SQL aligned.
+"""UDTF parameter registries keep generated UDTF signatures and view SQL aligned.
 
 Downstream Unity Catalog registration builds the function signature from this registry, so every
 named argument the view SQL passes must come from it (``UNRECOGNIZED_PARAMETER_NAME`` otherwise).
@@ -96,13 +96,13 @@ def _named_args(sql: str) -> list[str]:
 
 
 def test_registry_lists_pushdown_parameters_in_signature_order() -> None:
-    from cognite.pygen_spark.pushdown import data_model_pushdown_parameters
+    from cognite.pygen_spark.udtf_parameters import data_model_pushdown_parameters
 
     assert data_model_pushdown_parameters.names == EXPECTED_PUSHDOWN_NAMES
 
 
 def test_registry_types_row_limit_as_long_and_rest_as_string() -> None:
-    from cognite.pygen_spark.pushdown import data_model_pushdown_parameters
+    from cognite.pygen_spark.udtf_parameters import data_model_pushdown_parameters
 
     by_name = data_model_pushdown_parameters.by_name
     assert isinstance(by_name["_row_limit"].spark_type, LongType)
@@ -118,11 +118,11 @@ def test_registry_is_exported_from_package() -> None:
 
 
 def test_eval_signature_is_secrets_properties_then_registry(generator, small_boat_view: dm.View) -> None:  # type: ignore[no-untyped-def]
-    from cognite.pygen_spark.pushdown import data_model_pushdown_parameters
+    from cognite.pygen_spark.udtf_parameters import data_model_pushdown_parameters
 
     code = generator.generate_udtf(small_boat_view, include_analyze=True, use_udtf_decorator=False)
     assert _method_params(code, "SmallBoatUDTF", "eval") == (
-        SECRET_PARAMETERS + PROPERTY_NAMES + data_model_pushdown_parameters.names
+        SECRET_PARAMETERS + PROPERTY_NAMES + data_model_pushdown_parameters.names + ["base_url"]
     )
 
 
