@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -116,7 +115,6 @@ def _response(payload: dict[str, object]) -> MagicMock:
 
 
 def _run_aggregate(udtf_class: type, aggregates: list[dict[str, str]], values: list[dict[str, object]]) -> list[tuple]:
-    token = _response({"access_token": "token", "expires_in": 3600})
     return _run_aggregate_with_request(udtf_class, aggregates, values)[0]
 
 
