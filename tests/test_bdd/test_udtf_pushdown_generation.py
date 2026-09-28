@@ -67,7 +67,9 @@ def test_generated_udtf_includes_pushdown_params(generator, lims_view: dm.View) 
     assert "effective_row_limit" in code
     assert "rows_yielded" in code
     assert "raise ValueError" in code
-    assert "col_to_idx" in code
+    assert "agg_columns" in code
+    # Unity Catalog does not run module-level imports at query time, so eval() must not build the schema
+    assert "self.outputSchema()" not in code
     assert '"limit": request_limit' in code
     assert "request_limit = page_limit" in code
 

@@ -634,9 +634,22 @@ class {{ view.external_id }}UDTF:
                 response_data = response.json()
                 items = response_data.get("items") or []
 
-                # Yield rows matching outputSchema length (PySpark requires schema alignment).
-                schema_fields = [f.name for f in self.outputSchema().fields]
-                col_to_idx = {name: i for i, name in enumerate(schema_fields)}
+                # Rows must match the outputSchema column order and types. Positions are rendered at codegen:
+                # Unity Catalog does not run module-level code at query time, so outputSchema() fails here.
+                agg_columns: dict[str, tuple[int, str]] = {
+{% for prop in properties %}
+                    "{{ prop.prop_name }}": ({{ loop.index0 }}, "{{ prop.value_kind }}"),
+{% endfor %}
+                }
+                external_id_index = {{ properties | length + 1 }}
+                column_count = {{ properties | length + 5 }}
+
+                def _agg_cell(value: object, value_kind: str) -> object:
+                    if value is None:
+                        return None
+                    if value_kind == "string" and not isinstance(value, (list, dict)):
+                        return str(value)
+                    return _normalize_value(value, value_kind)
 
                 def _agg_prop_name(property_value: object) -> str:
                     if isinstance(property_value, list) and property_value:
@@ -658,20 +671,21 @@ class {{ view.external_id }}UDTF:
                             metrics_lookup[(agg_fn, prop_name)] = a.get("value")
 
                     group = item.get("group") or {}
-                    row_values: list[object] = [None] * len(schema_fields)
+                    row_values: list[object] = [None] * column_count
 
                     for col in group_by_cols:
-                        if col in col_to_idx:
-                            row_values[col_to_idx[col]] = group.get(col) if isinstance(group, dict) else None
+                        if col in agg_columns and isinstance(group, dict):
+                            index, value_kind = agg_columns[col]
+                            row_values[index] = _agg_cell(group.get(col), value_kind)
 
                     for fn, prop in metric_keys:
-                        # COUNT maps onto the identity external_id output column.
+                        value = metrics_lookup.get((fn, prop))
+                        # COUNT maps onto the identity external_id output column (STRING).
                         if fn == "count" and prop in {"externalId", "external_id"}:
-                            target_col = "external_id"
-                        else:
-                            target_col = prop
-                        if target_col in col_to_idx:
-                            row_values[col_to_idx[target_col]] = metrics_lookup.get((fn, prop))
+                            row_values[external_id_index] = _agg_cell(value, "string")
+                        elif prop in agg_columns:
+                            index, value_kind = agg_columns[prop]
+                            row_values[index] = _agg_cell(value, value_kind)
 
                     yield tuple(row_values)
                 return
