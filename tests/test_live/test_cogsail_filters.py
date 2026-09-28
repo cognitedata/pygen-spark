@@ -1,20 +1,13 @@
 """Live CDF validation of FilterDefinition JSON against cognite-cogsail.
 
-Credentials are loaded from ``CDF_CREDENTIALS_TOML`` (default path from the plan).
+The ``live_client`` fixture lives in ``conftest.py`` (credentials from ``CDF_CREDENTIALS_TOML``).
 Secrets are never logged. Tests skip when the TOML file is missing.
 """
 
 from __future__ import annotations
 
-import os
-import sys
-from pathlib import Path
-from typing import Any
-
 import pytest
 from cognite.client import CogniteClient
-from cognite.client.config import ClientConfig
-from cognite.client.credentials import OAuthClientCredentials
 
 from cognite.pygen_spark.filters import (
     AggregateMetric,
@@ -23,59 +16,6 @@ from cognite.pygen_spark.filters import (
     build_aggregate_payload,
     build_filter_json,
 )
-
-# Prefer stdlib tomllib on 3.11+; mypy on 3.10 only type-checks the else branch.
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib  # type: ignore[import-not-found,no-redef]
-
-DEFAULT_TOML = Path(r"C:\Users\FredrikHolm\Downloads\PRD-Data Quality\cog-sail-client_id.toml")
-
-
-def _credentials_toml_path() -> Path:
-    override = os.environ.get("CDF_CREDENTIALS_TOML")
-    return Path(override) if override else DEFAULT_TOML
-
-
-def _load_toml(path: Path) -> dict[str, Any]:
-    with path.open("rb") as fh:
-        return tomllib.load(fh)
-
-
-@pytest.fixture(scope="module")
-def live_client() -> CogniteClient:
-    path = _credentials_toml_path()
-    if not path.is_file():
-        pytest.skip(f"Live credentials TOML not found: {path}")
-
-    data = _load_toml(path)
-    cognite = data["cognite"]
-    runtime = data.get("fn_btp_hierarchy_runtime") or {}
-    client_id = runtime.get("client_id") or data.get("hierarchy_workflow_triggers", {}).get("ingest_trigger_client_id")
-    client_secret = runtime.get("client_secret") or data.get("hierarchy_workflow_trigger_secrets", {}).get(
-        "ingest_trigger_client_secret"
-    )
-    if not client_id or not client_secret:
-        pytest.skip("TOML missing client_id / client_secret")
-
-    project = cognite["project"]
-    cluster = cognite["cdf_cluster"]
-    tenant = cognite["idp_tenant_id"]
-    base_url = f"https://{cluster}.cognitedata.com"
-    creds = OAuthClientCredentials(
-        token_url=f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token",
-        client_id=client_id,
-        client_secret=client_secret,
-        scopes=[f"{base_url}/.default"],
-    )
-    config = ClientConfig(
-        client_name="pygen-spark-live-filters",
-        project=project,
-        credentials=creds,
-        base_url=base_url,
-    )
-    return CogniteClient(config)
 
 
 @pytest.fixture(scope="module")
