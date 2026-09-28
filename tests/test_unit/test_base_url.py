@@ -16,8 +16,6 @@ import pytest
 from cognite.client import CogniteClient
 from cognite.client import data_modeling as dm
 
-pytest.importorskip("pyspark")
-
 from cognite.pygen_spark.audit import cdf_audit_http_template_context
 
 TIME_SERIES_TEMPLATES = [

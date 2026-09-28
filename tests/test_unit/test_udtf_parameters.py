@@ -12,9 +12,6 @@ import re
 import pytest
 from cognite.client import CogniteClient
 from cognite.client import data_modeling as dm
-
-pytest.importorskip("pyspark")
-
 from pyspark.sql.types import LongType, StringType
 
 SECRET_PARAMETERS = ["client_id", "client_secret", "tenant_id", "cdf_cluster", "project"]
