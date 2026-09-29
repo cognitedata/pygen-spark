@@ -14,6 +14,7 @@ from jinja2 import Environment, PackageLoader, select_autoescape
 from cognite.pygen._core.generators import MultiAPIGenerator  # type: ignore[import-untyped]
 from cognite.pygen_spark.audit import cdf_audit_http_template_context
 from cognite.pygen_spark.fields import UDTFField
+from cognite.pygen_spark.udtf_parameters import base_url_parameter, data_model_pushdown_parameters
 
 if TYPE_CHECKING:
     from cognite.client.data_classes.data_modeling import View
@@ -85,6 +86,8 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
 
         self.env.filters["escape_python_string"] = escape_python_string
         self.env.filters["escape_python_literal"] = escape_python_literal
+        # Global so time series templates (rendered outside generate_udtf) see it too
+        self.env.globals["base_url_parameter"] = base_url_parameter
         # Note: We don't need to store data_model anymore - views are independent
         # and we use view.as_id() directly in the template
 
@@ -139,6 +142,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         code = template.render(
             view=view,
             properties=udtf_fields,  # Pass UDTFField objects (like pygen-main passes Field objects)
+            pushdown_parameters=data_model_pushdown_parameters.parameters,
             include_analyze=include_analyze,  # Pass include_analyze to template
             use_udtf_decorator=use_udtf_decorator,
             **audit_ctx,
@@ -186,6 +190,7 @@ class SparkMultiAPIGenerator(MultiAPIGenerator):
         template_vars = {
             "view": view,
             "properties": self.udtf_fields_for_view(view),
+            "pushdown_parameters": data_model_pushdown_parameters.parameters,
             "secret_scope": secret_scope,
             "udtf_name": to_udtf_function_name(view.external_id),  # Use consistent snake_case conversion
         }

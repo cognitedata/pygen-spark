@@ -74,6 +74,7 @@ class TimeSeriesLatestDatapointsUDTF:
         instance_ids: str | None = None,  # Format: "space1:ext_id1,space2:ext_id2"
         before: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601
         include_status: object | None = None,  # Boolean
+        base_url: str | None = None,
     ) -> Iterator[tuple]:
         """Execute scalar UDTF using instance_ids (comma-separated) for query.
         
@@ -88,6 +89,7 @@ class TimeSeriesLatestDatapointsUDTF:
             instance_ids: Comma-separated instance IDs in format "space1:ext_id1,space2:ext_id2" (scalar)
             before: Timestamp before which to retrieve latest datapoints (scalar)
             include_status: Whether to include status information (scalar, boolean)
+            base_url: {{ base_url_parameter.description }} (scalar, optional)
         
         Yields:
             Tuples with (time_series_external_id, timestamp, value, status_code) columns
@@ -377,7 +379,7 @@ class TimeSeriesLatestDatapointsUDTF:
                 print(query_start)  # Also print to stdout for Serverless SQL visibility
                 
                 # Make direct REST call to CDF API
-                base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+                base_url = _resolve_base_url(_extract_scalar(base_url), str(cdf_cluster_str))
                 api_path = f"/api/v1/projects/{project_str}/timeseries/data/latest"
                 full_url = f"{base_url}{api_path}"
                 

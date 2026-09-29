@@ -242,12 +242,8 @@ def build_aggregate_payload(spec: AggregateRequestSpec) -> dict[str, Any]:
         if metric.fn == "count" and metric.property in {"externalId", "external_id"}:
             aggregates_payload.append({"count": {"property": "externalId"}})
         else:
-            property_ref = [
-                spec.view_space,
-                f"{spec.view_external_id}/{spec.view_version}",
-                metric.property,
-            ]
-            aggregates_payload.append({metric.fn: {"property": property_ref}})
+            # The view is given at the top level; CDF expects the bare property name, not a path array.
+            aggregates_payload.append({metric.fn: {"property": metric.property}})
 
     payload: dict[str, Any] = {
         "view": {

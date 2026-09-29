@@ -8,16 +8,8 @@ SELECT * FROM {{ catalog }}.{{ schema }}.{{ udtf_name }}(
 {%- for prop in properties %}
     {{ prop.name }} => NULL,
 {%- endfor %}
-    instance_space => NULL,
-    external_id => NULL,
-    _exists => NULL,
-    _not_exists => NULL,
-    _gt => NULL,
-    _gte => NULL,
-    _lt => NULL,
-    _lte => NULL,
-    _row_limit => NULL,
-    _query_mode => NULL,
-    _aggregates => NULL,
-    _group_by => NULL
+{%- for param in pushdown_parameters %}
+    {{ param.name }} => NULL,
+{%- endfor %}
+    {{ base_url_parameter.name }} => SECRET('{{ secret_scope }}', '{{ base_url_parameter.name }}')
 )

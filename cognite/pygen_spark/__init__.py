@@ -34,6 +34,23 @@ from cognite.pygen_spark.models import (
 )
 
 try:
+    from cognite.pygen_spark.udtf_parameters import (
+        UDTFParameter,
+        UDTFParameterRegistry,
+        base_url_parameter,
+        data_model_pushdown_parameters,
+    )
+except (
+    ImportError,
+    ModuleNotFoundError,
+    AttributeError,
+):  # pragma: no cover - fallback for environments without PySpark
+    UDTFParameter = None  # type: ignore[assignment,misc]
+    UDTFParameterRegistry = None  # type: ignore[assignment,misc]
+    base_url_parameter = None  # type: ignore[assignment]
+    data_model_pushdown_parameters = None  # type: ignore[assignment]
+
+try:
     from cognite.pygen_spark.time_series_udtfs import (
         TimeSeriesDatapointsUDTF,
         TimeSeriesLatestDatapointsUDTF,
@@ -81,6 +98,9 @@ __all__ = [
 
 if UDTFField is not None:
     __all__.append("UDTFField")
+
+if data_model_pushdown_parameters is not None:
+    __all__.extend(["UDTFParameter", "UDTFParameterRegistry", "base_url_parameter", "data_model_pushdown_parameters"])
 
 if TypeConverter is not None:
     __all__.append("TypeConverter")

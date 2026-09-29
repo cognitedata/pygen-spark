@@ -74,6 +74,7 @@ class TimeSeriesDatapointsUDTF:
         end,
         aggregates,
         granularity,
+        base_url=None,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
@@ -91,6 +92,7 @@ class TimeSeriesDatapointsUDTF:
             end: End timestamp column (ISO 8601 or "now", "1d-ahead", etc.)
             aggregates: Optional aggregate type column (e.g., "average", "max", "min", "count")
             granularity: Optional granularity column for aggregates (e.g., "1h", "1d", "30s")
+            base_url: {{ base_url_parameter.description }} (optional)
         
         Returns:
             AnalyzeResult containing the output schema
@@ -132,6 +134,7 @@ class TimeSeriesDatapointsUDTF:
         end: object | None = None,    # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
         aggregates: str | None = None,
         granularity: str | None = None,
+        base_url: str | None = None,
     ) -> Iterator[tuple]:
         """Execute scalar UDTF using instance_id (space:external_id) for query.
         
@@ -482,7 +485,7 @@ class TimeSeriesDatapointsUDTF:
                 print(query_start)  # Also print to stdout for Serverless SQL visibility
                 
                 # Make direct REST call to CDF API with protobuf
-                base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+                base_url = _resolve_base_url(_extract_scalar(base_url), str(cdf_cluster_str))
                 api_path = f"/api/v1/projects/{project_str}/timeseries/data/list"
                 full_url = f"{base_url}{api_path}"
                 

@@ -63,18 +63,10 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
         {{ prop.name }}=None,
 {% endfor %}
-        instance_space=None,
-        external_id=None,
-        _exists=None,
-        _not_exists=None,
-        _gt=None,
-        _gte=None,
-        _lt=None,
-        _lte=None,
-        _row_limit=None,
-        _query_mode=None,
-        _aggregates=None,
-        _group_by=None,
+{% for param in pushdown_parameters %}
+        {{ param.name }}=None,
+{% endfor %}
+        base_url=None,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
         
@@ -90,15 +82,10 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
             {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} column (optional, defaults to None)
 {% endfor %}
-            instance_space: Optional instance identity space filter (pushdown)
-            external_id: Optional instance identity externalId filter (pushdown)
-            _exists: Optional JSON list of properties for IS NOT NULL (exists)
-            _not_exists: Optional JSON list of properties for IS NULL (not exists)
-            _gt/_gte/_lt/_lte: Optional JSON maps for range pushdown
-            _row_limit: Optional SQL LIMIT pushdown for instances/list
-            _query_mode: Optional "list" (default) or "aggregate"
-            _aggregates: Optional JSON list of {fn, property} for aggregate mode
-            _group_by: Optional JSON list of groupBy property names
+{% for param in pushdown_parameters %}
+            {{ param.name }}: {{ param.description | escape_python_string }} (pushdown, optional)
+{% endfor %}
+            base_url: {{ base_url_parameter.description | escape_python_string }} (optional)
         
         Returns:
             AnalyzeResult containing the output schema
@@ -138,18 +125,10 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
         {{ prop.name }}: object | None = None,
 {% endfor %}
-        instance_space: object | None = None,
-        external_id: object | None = None,
-        _exists: object | None = None,
-        _not_exists: object | None = None,
-        _gt: object | None = None,
-        _gte: object | None = None,
-        _lt: object | None = None,
-        _lte: object | None = None,
-        _row_limit: object | None = None,
-        _query_mode: object | None = None,
-        _aggregates: object | None = None,
-        _group_by: object | None = None,
+{% for param in pushdown_parameters %}
+        {{ param.name }}: object | None = None,
+{% endfor %}
+        base_url: str | None = None,
     ) -> Iterator[tuple]:
         """Execute scalar UDTF and yield rows as tuples.
         
@@ -170,15 +149,10 @@ class {{ view.external_id }}UDTF:
 {% for prop in properties %}
             {{ prop.name }}: {{ (prop.description or prop.name) | escape_python_string }} (scalar value)
 {% endfor %}
-            instance_space: Instance identity space filter (equals or JSON list)
-            external_id: Instance identity externalId filter (equals or JSON list)
-            _exists: JSON list of view properties for exists (IS NOT NULL)
-            _not_exists: JSON list of view properties for not-exists (IS NULL)
-            _gt/_gte/_lt/_lte: JSON maps of property -> value for range filters
-            _row_limit: Optional row LIMIT for instances/list pagination
-            _query_mode: "list" (default) or "aggregate"
-            _aggregates: JSON list of {fn, property} for aggregate mode
-            _group_by: JSON list of groupBy property names
+{% for param in pushdown_parameters %}
+            {{ param.name }}: {{ param.description | escape_python_string }}
+{% endfor %}
+            base_url: {{ base_url_parameter.description | escape_python_string }}
         
         Yields:
             Tuples representing rows from the View (list mode) or aggregate metrics (aggregate mode)
@@ -590,7 +564,7 @@ class {{ view.external_id }}UDTF:
                 raise
             
             # Build API URL
-            base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+            base_url = _resolve_base_url(_extract_scalar(base_url), str(cdf_cluster_str))
 
             # Aggregate mode: POST /models/instances/aggregate (no list pagination)
             if query_mode == "aggregate":
@@ -600,6 +574,16 @@ class {{ view.external_id }}UDTF:
                     raise ValueError("aggregate mode requires _aggregates JSON list of {fn, property}")
                 if len(aggregates_raw) > 5:
                     raise ValueError("instances/aggregate allows at most 5 aggregates per request")
+
+                # Rows must match the outputSchema column order and types. Positions are rendered at codegen:
+                # Unity Catalog does not run module-level code at query time, so outputSchema() fails here.
+                agg_columns: dict[str, tuple[int, str]] = {
+{% for prop in properties %}
+                    "{{ prop.prop_name }}": ({{ loop.index0 }}, "{{ prop.value_kind }}"),
+{% endfor %}
+                }
+                external_id_index = {{ properties | length + 1 }}
+                column_count = {{ properties | length + 5 }}
 
                 aggregates_payload: list[dict] = []
                 metric_keys: list[tuple[str, str]] = []
@@ -614,12 +598,14 @@ class {{ view.external_id }}UDTF:
                         aggregates_payload.append({"count": {"property": "externalId"}})
                         metric_keys.append(("count", "externalId"))
                     else:
-                        property_ref = [
-                            "{{ view.space | escape_python_literal }}",
-                            "{{ (view.external_id + '/' + view.version) | escape_python_literal }}",
-                            prop,
-                        ]
-                        aggregates_payload.append({fn: {"property": property_ref}})
+                        column = agg_columns.get(prop)
+                        if fn in {"min", "max"} and column is not None and column[1] not in {"long", "double"}:
+                            raise ValueError(
+                                f"CDF instances/aggregate supports {fn.upper()} only on numeric properties; "
+                                f"'{prop}' is {column[1]}. Run this aggregate in Spark on the view instead."
+                            )
+                        # The view is given at the top level; CDF expects the bare property name, not a path.
+                        aggregates_payload.append({fn: {"property": prop}})
                         metric_keys.append((fn, prop))
 
                 if not aggregates_payload:
@@ -660,9 +646,12 @@ class {{ view.external_id }}UDTF:
                 response_data = response.json()
                 items = response_data.get("items") or []
 
-                # Yield rows matching outputSchema length (PySpark requires schema alignment).
-                schema_fields = [f.name for f in self.outputSchema().fields]
-                col_to_idx = {name: i for i, name in enumerate(schema_fields)}
+                def _agg_cell(value: object, value_kind: str) -> object:
+                    if value is None:
+                        return None
+                    if value_kind == "string" and not isinstance(value, (list, dict)):
+                        return str(value)
+                    return _normalize_value(value, value_kind)
 
                 def _agg_prop_name(property_value: object) -> str:
                     if isinstance(property_value, list) and property_value:
@@ -684,20 +673,21 @@ class {{ view.external_id }}UDTF:
                             metrics_lookup[(agg_fn, prop_name)] = a.get("value")
 
                     group = item.get("group") or {}
-                    row_values: list[object] = [None] * len(schema_fields)
+                    row_values: list[object] = [None] * column_count
 
                     for col in group_by_cols:
-                        if col in col_to_idx:
-                            row_values[col_to_idx[col]] = group.get(col) if isinstance(group, dict) else None
+                        if col in agg_columns and isinstance(group, dict):
+                            index, value_kind = agg_columns[col]
+                            row_values[index] = _agg_cell(group.get(col), value_kind)
 
                     for fn, prop in metric_keys:
-                        # COUNT maps onto the identity external_id output column.
+                        value = metrics_lookup.get((fn, prop))
+                        # COUNT maps onto the identity external_id output column (STRING).
                         if fn == "count" and prop in {"externalId", "external_id"}:
-                            target_col = "external_id"
-                        else:
-                            target_col = prop
-                        if target_col in col_to_idx:
-                            row_values[col_to_idx[target_col]] = metrics_lookup.get((fn, prop))
+                            row_values[external_id_index] = _agg_cell(value, "string")
+                        elif prop in agg_columns:
+                            index, value_kind = agg_columns[prop]
+                            row_values[index] = _agg_cell(value, value_kind)
 
                     yield tuple(row_values)
                 return

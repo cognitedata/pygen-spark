@@ -71,6 +71,7 @@ class TimeSeriesSqlUDTF:
         end_hint,
         aggregate_hint,
         granularity_hint,
+        base_url=None,
     ):
         """Analyze method required by PySpark Connect for session-scoped UDTFs.
 
@@ -88,6 +89,7 @@ class TimeSeriesSqlUDTF:
             end_hint: End timestamp column (SQL TIMESTAMP, ISO 8601, or relative time)
             aggregate_hint: SQL aggregate hint (e.g., "avg", "sum", "min", "max")
             granularity_hint: SQL group-by granularity hint (e.g., "14d", "1h")
+            base_url: {{ base_url_parameter.description }} (optional)
 
         Returns:
             AnalyzeResult containing the output schema
@@ -130,6 +132,7 @@ class TimeSeriesSqlUDTF:
         end_hint: object | None = None,  # SQL TIMESTAMP, relative time string, ISO 8601, or milliseconds
         aggregate_hint: str | None = None,  # SQL aggregate hint (avg/sum/min/max/count)
         granularity_hint: str | None = None,  # Granularity hint (e.g., "14d", "1h")
+        base_url: str | None = None,
     ) -> Iterator[tuple]:
         """Execute scalar UDTF using pushdown hints for aggregates and granularity.
 
@@ -147,6 +150,7 @@ class TimeSeriesSqlUDTF:
             end_hint: End timestamp (scalar)
             aggregate_hint: SQL aggregate hint (scalar)
             granularity_hint: Granularity hint for aggregates (scalar)
+            base_url: {{ base_url_parameter.description }} (scalar, optional)
 
         Yields:
             Tuples with (timestamp, value, external_id, space) columns
@@ -497,7 +501,7 @@ class TimeSeriesSqlUDTF:
                 print(query_start)  # Also print to stdout for Serverless SQL visibility
 
                 # Make direct REST call to CDF API with protobuf
-                base_url = f"https://{cdf_cluster_str}.cognitedata.com"
+                base_url = _resolve_base_url(_extract_scalar(base_url), str(cdf_cluster_str))
                 api_path = f"/api/v1/projects/{project_str}/timeseries/data/list"
                 full_url = f"{base_url}{api_path}"
 
