@@ -28,7 +28,8 @@ from typing import Literal
 
 from cognite.client import CogniteClient
 from cognite.client import data_modeling as dm
-from cognite.client.data_classes.data_modeling.containers import BTreeIndex
+from cognite.client.data_classes.data_modeling.containers import BTreeIndex, Index
+from cognite.client.data_classes.data_modeling.views import ViewPropertyApply
 from cognite.client.exceptions import CogniteAPIError
 from pydantic import BaseModel, ConfigDict, Field, create_model
 
@@ -326,7 +327,7 @@ def _field_type(spec: ColumnSpec) -> object:
 LimsResultProperties: type[BaseModel] = create_model(
     "LimsResultProperties",
     __config__=ConfigDict(extra="forbid"),
-    **{spec.name: _field_type(spec) for spec in COLUMNS},  # type: ignore[arg-type]
+    **{spec.name: _field_type(spec) for spec in COLUMNS},  # type: ignore[call-overload]
 )
 
 
@@ -549,7 +550,7 @@ def _container_apply(seed: LimsResultSeed) -> dm.ContainerApply:
         )
         for spec in COLUMNS
     }
-    indexes = {name: BTreeIndex(properties=[name]) for name in _INDEXED}
+    indexes: dict[str, Index] = {name: BTreeIndex(properties=[name]) for name in _INDEXED}
     return dm.ContainerApply(
         space=seed.view_space,
         external_id=seed.container_external_id,
@@ -563,7 +564,7 @@ def _container_apply(seed: LimsResultSeed) -> dm.ContainerApply:
 
 def _view_apply(seed: LimsResultSeed) -> dm.ViewApply:
     container = dm.ContainerId(space=seed.view_space, external_id=seed.container_external_id)
-    properties = {
+    properties: dict[str, ViewPropertyApply] = {
         spec.name: dm.MappedPropertyApply(
             container=container,
             container_property_identifier=spec.name,
