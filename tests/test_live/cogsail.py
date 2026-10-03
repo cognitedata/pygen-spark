@@ -164,6 +164,7 @@ def load_cogsail_client(path: Path) -> CogniteClient | None:
         return None
     base_url = f"https://{cluster}.cognitedata.com"
 
+    credentials: OAuthClientCredentials | Token
     if client_id and client_secret:
         tenant_id = cognite.get("idp_tenant_id") or cognite.get("tenant_id")
         if not tenant_id:
