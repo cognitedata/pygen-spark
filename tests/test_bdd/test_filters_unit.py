@@ -11,6 +11,7 @@ from cognite.pygen_spark.filters import (
     build_filter_json,
     effective_list_request_limit,
     filter_spec_from_udtf_params,
+    parse_grouped_counts,
 )
 
 
@@ -30,6 +31,18 @@ def test_filter_spec_from_udtf_params_roundtrip() -> None:
     assert result is not None
     assert "and" in result
     assert len(result["and"]) == 4
+
+
+def test_parse_grouped_counts() -> None:
+    payload = {
+        "items": [
+            {
+                "group": {"componentName": "MOISTURE_CONTENT"},
+                "aggregates": [{"aggregate": "count", "property": "externalId", "value": 6000}],
+            }
+        ]
+    }
+    assert parse_grouped_counts(payload) == [({"componentName": "MOISTURE_CONTENT"}, 6000)]
 
 
 def test_aggregate_rejects_more_than_five() -> None:

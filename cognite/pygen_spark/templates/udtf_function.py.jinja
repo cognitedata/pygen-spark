@@ -583,6 +583,7 @@ class {{ view.external_id }}UDTF:
 {% endfor %}
                 }
                 external_id_index = {{ properties | length + 1 }}
+                space_index = {{ properties | length }}
                 column_count = {{ properties | length + 5 }}
 
                 aggregates_payload: list[dict] = []
@@ -676,9 +677,16 @@ class {{ view.external_id }}UDTF:
                     row_values: list[object] = [None] * column_count
 
                     for col in group_by_cols:
-                        if col in agg_columns and isinstance(group, dict):
+                        if not isinstance(group, dict):
+                            continue
+                        if col in agg_columns:
                             index, value_kind = agg_columns[col]
                             row_values[index] = _agg_cell(group.get(col), value_kind)
+                        elif col == "space":
+                            row_values[space_index] = _agg_cell(group.get("space"), "string")
+                        elif col in {"externalId", "external_id"}:
+                            group_external_id = group.get("externalId", group.get("external_id"))
+                            row_values[external_id_index] = _agg_cell(group_external_id, "string")
 
                     for fn, prop in metric_keys:
                         value = metrics_lookup.get((fn, prop))
