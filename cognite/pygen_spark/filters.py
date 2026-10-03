@@ -297,6 +297,30 @@ def parse_aggregate_count(response_data: dict[str, Any]) -> int:
     val = metrics.get(("count", "externalId"))
     if val is None:
         return 0
+    return _coerce_count(val)
+
+
+def parse_grouped_counts(response_data: dict[str, Any]) -> list[tuple[dict[str, object], int]]:
+    """Parse grouped aggregate items into ``(group key, count)`` pairs."""
+    rows: list[tuple[dict[str, object], int]] = []
+    for item in response_data.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        group = item.get("group") or {}
+        if not isinstance(group, dict):
+            continue
+        count_value: object | None = None
+        for agg in item.get("aggregates") or []:
+            if not isinstance(agg, dict):
+                continue
+            if str(agg.get("aggregate")) == "count" and _aggregate_property_name(agg.get("property")) == "externalId":
+                count_value = agg.get("value")
+        if count_value is not None:
+            rows.append((group, _coerce_count(count_value)))
+    return rows
+
+
+def _coerce_count(val: object) -> int:
     if isinstance(val, bool):
         return int(val)
     if isinstance(val, (int, float)):

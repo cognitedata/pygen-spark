@@ -21,6 +21,7 @@ from cognite.pygen_spark.filters import (
     build_filter_json,
     effective_list_request_limit,
     parse_aggregate_count,
+    parse_grouped_counts,
     parse_metric_aggregates,
 )
 from tests.test_live.lims_result import (
@@ -176,6 +177,58 @@ def test_numeric_min_max_and_january_range(live_client: CogniteClient, seeded_li
         ),
     )
     assert parse_aggregate_count(payload) == january_entered_count()
+
+
+def _counts_by_group(payload: dict[str, Any], *keys: str) -> dict[tuple[object, ...], int]:
+    return {tuple(group.get(key) for key in keys): count for group, count in parse_grouped_counts(payload)}
+
+
+@pytest.mark.live
+def test_group_by_with_where_filters(live_client: CogniteClient, seeded_lims_result: LimsResultSeed) -> None:
+    seed = seeded_lims_result
+
+    def grouped(*keys: str, group_by: list[str], **filter_kwargs: Any) -> dict[tuple[object, ...], int]:
+        payload = _post_aggregate(
+            live_client,
+            seed,
+            AggregateRequestSpec(
+                view_space=seed.view_space,
+                view_external_id=seed.view_external_id,
+                view_version=seed.view_version,
+                aggregates=[AggregateMetric(fn="count", property="externalId")],
+                filter_json=_filter(seed, **filter_kwargs),
+                group_by=group_by,
+            ),
+        )
+        return _counts_by_group(payload, *keys)
+
+    lab_a_components = grouped("componentName", group_by=["componentName"], instance_space=seed.lab_a)
+    assert len(lab_a_components) == 10
+    assert set(lab_a_components.values()) == {LAB_A_COUNT // 10}
+    assert lab_a_components[(MOISTURE_CONTENT,)] == LAB_A_COUNT // 10
+
+    moisture = grouped(
+        "componentName",
+        group_by=["componentName"],
+        instance_space=seed.lab_a,
+        property_filters={"componentName": MOISTURE_CONTENT},
+    )
+    assert moisture == {(MOISTURE_CONTENT,): LAB_A_COUNT // 10}
+
+    by_space_and_component = grouped(
+        "space",
+        "componentName",
+        group_by=["space", "componentName"],
+        instance_space=[seed.lab_a, seed.lab_b],
+    )
+    lab_a_counts = {count for (space, _), count in by_space_and_component.items() if space == seed.lab_a}
+    lab_b_counts = {count for (space, _), count in by_space_and_component.items() if space == seed.lab_b}
+    assert len(by_space_and_component) == 20
+    assert lab_a_counts == {LAB_A_COUNT // 10}
+    assert lab_b_counts == {LAB_B_COUNT // 10}
+
+    by_space = grouped("space", group_by=["space"], instance_space=[seed.lab_a, seed.lab_b])
+    assert by_space == {(seed.lab_a,): LAB_A_COUNT, (seed.lab_b,): LAB_B_COUNT}
 
 
 @pytest.mark.live
