@@ -27,7 +27,7 @@ Full release notes are published on [GitHub Releases](https://github.com/cognite
 - **UDTF Generation**: Automatically generates Python UDTF functions for each View in a CDF Data Model
 - **Time Series UDTFs**: Template-generated UDTFs for querying CDF time series datapoints (single, multiple, latest) using the same template-based generation as Data Model UDTFs
 - **Type Safety**: Leverages pygen's internal representation for strongly-typed code generation
-- **Predicate Pushdown**: Generated UDTFs push WHERE filters, `LIMIT`, and `COUNT`/`MIN`/`MAX` (numeric properties) to CDF `instances/list` and `instances/aggregate`. A trailing `base_url` parameter is read at query time for Private Link and dedicated clusters.
+- **Predicate Pushdown**: Generated UDTFs push WHERE filters, `LIMIT`, `COUNT`/`MIN`/`MAX` (numeric properties), and grouped aggregates to CDF `instances/list` and `instances/aggregate`. A grouped row copies `space` and `externalId` onto the result. Regenerate and re-register every data-model UDTF after upgrading so existing registrations pick up `base_url` and the group-row identity columns. A trailing `base_url` parameter is read at query time for Private Link and dedicated clusters.
 - **CDF audit headers**: Generated UDTF HTTP clients send pygen-main-style `x-cdp-app`, `x-cdp-sdk`, and `User-Agent` for attributable CDF traffic
 - **Configuration File Support**: Uses TOML/YAML configuration files for secure credential management
 - **Generic Spark Support**: Works with any Spark cluster, not limited to Databricks

@@ -10,11 +10,14 @@ Space layout (schema space is not an instance space):
 The column set follows the 40-column LIMS result entity: camelCase CDF properties, CDF primitives.
 Nodes are generated from ``result_id`` (no checked-in dump). ``result_000001`` is the equality fixture.
 
-Run the seed standalone (idempotent)::
+The pygen-spark live tests own this seed on the cognite-cogsail project. Run it standalone (idempotent)::
 
     uv run python -m tests.test_live.lims_result
 
-Credentials come from ``CDF_CREDENTIALS_TOML``. Secrets are never printed.
+A finished run stores the fixture row and ``result_100000``. The next run skips the instance upsert when both
+are present. If a run stops early, run the same command again: completed batches stay, and the command upserts
+from the start until those two rows exist. Pass ``force=True`` to ``ensure_lims_result_seed`` to rewrite every
+node. Credentials come from ``CDF_CREDENTIALS_TOML``. Secrets are never printed.
 """
 
 from __future__ import annotations
