@@ -21,7 +21,7 @@ from typing import Any
 from cognite.client import CogniteClient
 from cognite.client import data_modeling as dm
 from cognite.client.config import ClientConfig
-from cognite.client.credentials import OAuthClientCredentials
+from cognite.client.credentials import OAuthClientCredentials, Token
 from pydantic import BaseModel, Field
 
 if sys.version_info >= (3, 11):
@@ -158,20 +158,34 @@ def load_cogsail_client(path: Path) -> CogniteClient | None:
     client_secret = runtime.get("client_secret") or data.get("hierarchy_workflow_trigger_secrets", {}).get(
         "ingest_trigger_client_secret"
     )
-    if not client_id or not client_secret:
+    cluster = cognite.get("cdf_cluster")
+    project = cognite.get("project")
+    if not cluster or not project:
         return None
+    base_url = f"https://{cluster}.cognitedata.com"
 
-    base_url = f"https://{cognite['cdf_cluster']}.cognitedata.com"
-    credentials = OAuthClientCredentials(
-        token_url=f"https://login.microsoftonline.com/{cognite['idp_tenant_id']}/oauth2/v2.0/token",
-        client_id=client_id,
-        client_secret=client_secret,
-        scopes=[f"{base_url}/.default"],
-    )
+    credentials: OAuthClientCredentials | Token
+    if client_id and client_secret:
+        tenant_id = cognite.get("idp_tenant_id") or cognite.get("tenant_id")
+        if not tenant_id:
+            return None
+        credentials = OAuthClientCredentials(
+            token_url=f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token",
+            client_id=client_id,
+            client_secret=client_secret,
+            scopes=[f"{base_url}/.default"],
+        )
+    else:
+        bearer_token = cognite.get("bearer_token")
+        if not isinstance(bearer_token, str) or not bearer_token:
+            return None
+        token_value = bearer_token
+        credentials = Token(lambda: token_value)
+
     return CogniteClient(
         ClientConfig(
             client_name="pygen-spark-live-tests",
-            project=cognite["project"],
+            project=str(project),
             credentials=credentials,
             base_url=base_url,
         )
